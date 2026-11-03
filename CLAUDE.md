@@ -13,7 +13,9 @@ The spec's prescribed build order: migrations → CFBD client → team-name cros
 - Read `docs/phase1_spec.md` before starting any task.
 - This project is standalone: never reference, import from, or touch other repos, folders, or databases (the spec's mention of another project's stack is background only; don't act on it).
 - Build in the spec's order (migrations → CFBD client → crosswalk → backfill → compute → cron → pages).
-- The spec's "Open decisions" (site name/domain, Phase 1 system split, slider default, FCS handling, CFBD tier) are unresolved: stop and ask before any work that depends on them.
+- Open decisions, resolved 2026-11-03: site name is the placeholder "CFB Rankings" (final name/domain still TBD, keep it in one constant); system split is the spec's (SP+/FPI predictive, Elo/SRS resume); slider default 50; FCS teams hidden entirely (still count FCS opponents in records); CFBD stays on the free tier (1,000 calls/month, shared pool), so the backfill must cache raw responses on disk and be re-runnable at zero API cost.
+- CFBD history (verified 2026-11-03): only `/ratings/elo` honors `week`. SP+, FPI and SRS ignore it, so backfilled weeks use end-of-season values (look-ahead) and the weekly cron snapshots them going forward. Disclose this on `/methodology`.
+- Week convention: CFBD restarts postseason at week 1; store postseason as (last regular week + 1).
 
 ## Commands
 
