@@ -2,7 +2,8 @@
 // Snapshots the current week: ingest -> compute -> on-demand revalidation. All writes are upserts.
 
 import { timingSafeEqual } from "node:crypto";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { RANKINGS_TAG } from "@/lib/rankings/data";
 import { createCfbdClient } from "@/lib/cfbd/client";
 import { computeAndStoreWeek } from "@/lib/compute/run";
 import { createAdminDb } from "@/lib/ingest/db";
@@ -36,6 +37,7 @@ export async function GET(request: Request) {
     const counts = await ingestSeason({ cfbd, db, season, weeks: [week], updateTeamMeta: true, log: console.log });
     const composite = await computeAndStoreWeek(db, season, week);
 
+    revalidateTag(RANKINGS_TAG, { expire: 0 });
     revalidatePath("/rankings");
     revalidatePath("/rankings/[season]/[week]", "page");
 
