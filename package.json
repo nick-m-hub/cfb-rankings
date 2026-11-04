@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "tsx --test \"lib/**/*.test.ts\"",
     "backfill": "tsx --env-file=.env.local scripts/backfill.ts",
+    "compute": "tsx --env-file=.env.local scripts/compute.ts",
     "sync-teams": "tsx --env-file=.env.local scripts/sync-teams.ts"
   },
   "dependencies": {
