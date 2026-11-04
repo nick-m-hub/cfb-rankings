@@ -128,8 +128,8 @@ export function createCfbdClient(options: CfbdClientOptions) {
     ratingsSp: (year: number) => get<SpRating[]>("/ratings/sp", { year }),
     ratingsFpi: (year: number) => get<FpiRating[]>("/ratings/fpi", { year }),
     ratingsSrs: (year: number) => get<SrsRating[]>("/ratings/srs", { year }),
-    /** Only rating endpoint with real week-by-week history. */
-    ratingsElo: (year: number, week: number) => get<EloRating[]>("/ratings/elo", { year, week }),
+    /** Only rating endpoint with real week-by-week history. Omit `week` for the end-of-season value. */
+    ratingsElo: (year: number, week?: number) => get<EloRating[]>("/ratings/elo", { year, week }),
 
     /**
      * Games. Omit `classification` to include FCS opponents, which records need.
