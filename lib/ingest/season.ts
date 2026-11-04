@@ -31,6 +31,11 @@ export interface IngestSeasonOptions {
    * teams has one row per team, so enable this for the newest season of a run only.
    */
   updateTeamMeta?: boolean;
+  /**
+   * Restrict rating writes (and Elo fetches) to these stored weeks. Used by the cron to snapshot only
+   * the current week instead of copying season-level systems onto future weeks.
+   */
+  weeks?: number[];
   log?: (msg: string) => void;
 }
 
@@ -73,6 +78,9 @@ export async function ingestSeason(opts: IngestSeasonOptions): Promise<SeasonCou
     cfbd.games(season, { seasonType: "both" }),
   ]);
   const weekMap = buildWeekMap(calendar);
+  const weeks = opts.weeks ?? weekMap.weeks;
+  const badWeek = weeks.find((w) => !weekMap.weeks.includes(w));
+  if (badWeek !== undefined) throw new Error(`Season ${season} has no stored week ${badWeek}`);
   const fbsCfbdIds = new Set(fbsTeams.map((t) => t.id));
   const games = fbsGames(allGames, fbsCfbdIds);
 
@@ -106,7 +114,7 @@ export async function ingestSeason(opts: IngestSeasonOptions): Promise<SeasonCou
   ]);
   // Elo is the only weekly series. The postseason slot gets the end-of-season value.
   const eloByWeek = new Map<number, Awaited<ReturnType<typeof cfbd.ratingsElo>>>();
-  for (const w of weekMap.weeks) {
+  for (const w of weeks) {
     eloByWeek.set(w, await cfbd.ratingsElo(season, w === weekMap.postseason ? undefined : w));
   }
 
@@ -156,9 +164,9 @@ export async function ingestSeason(opts: IngestSeasonOptions): Promise<SeasonCou
   };
   const common = { season, allowedTeamIds: fbsDbIds };
   const ratingRows: Record<string, RatingRow[]> = {
-    "SP+": buildRatingRows({ ...common, systemId: systemId("SP+"), weeks: weekMap.weeks, rows: sp, name: (r) => r.team, value: (r) => r.rating, teamIdByName: spIds }),
-    FPI: buildRatingRows({ ...common, systemId: systemId("FPI"), weeks: weekMap.weeks, rows: fpi, name: (r) => r.team, value: (r) => r.fpi, teamIdByName: fpiIds }),
-    SRS: buildRatingRows({ ...common, systemId: systemId("SRS"), weeks: weekMap.weeks, rows: srs, name: (r) => r.team, value: (r) => r.rating, teamIdByName: srsIds }),
+    "SP+": buildRatingRows({ ...common, systemId: systemId("SP+"), weeks, rows: sp, name: (r) => r.team, value: (r) => r.rating, teamIdByName: spIds }),
+    FPI: buildRatingRows({ ...common, systemId: systemId("FPI"), weeks, rows: fpi, name: (r) => r.team, value: (r) => r.fpi, teamIdByName: fpiIds }),
+    SRS: buildRatingRows({ ...common, systemId: systemId("SRS"), weeks, rows: srs, name: (r) => r.team, value: (r) => r.rating, teamIdByName: srsIds }),
     Elo: [...eloByWeek].flatMap(([week, rows]) =>
       buildRatingRows({ ...common, systemId: systemId("Elo"), weeks: [week], rows, name: (r) => r.team, value: (r) => r.elo, teamIdByName: eloIds }),
     ),

@@ -41,3 +41,25 @@ export function buildWeekMap(calendar: readonly CalendarWeek[]): WeekMap {
     },
   };
 }
+
+/** CFBD seasons start in late August; January games belong to the previous season. */
+export function seasonForDate(now: Date): number {
+  return now.getUTCMonth() >= 7 ? now.getUTCFullYear() : now.getUTCFullYear() - 1;
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * The stored week "in progress" at `now`: the latest calendar week that has started. Null before the
+ * season starts or more than two weeks after its last week ended (offseason; nothing to snapshot).
+ */
+export function currentStoredWeek(calendar: readonly CalendarWeek[], weekMap: WeekMap, now: Date): number | null {
+  const started = calendar
+    .filter((c) => Date.parse(c.startDate) <= now.getTime())
+    .sort((a, b) => Date.parse(a.startDate) - Date.parse(b.startDate));
+  const latest = started.at(-1);
+  if (!latest) return null;
+  const lastEnd = Math.max(...calendar.map((c) => Date.parse(c.endDate)));
+  if (now.getTime() > lastEnd + 14 * DAY_MS) return null;
+  return weekMap.storedWeek(latest.seasonType as SeasonType, latest.week);
+}
