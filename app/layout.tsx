@@ -29,7 +29,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <header className="border-b border-current/10">
           <nav className="mx-auto flex w-full max-w-4xl items-center gap-4 px-4 py-3 text-sm">
             <Link href="/rankings" className="font-semibold">{SITE_NAME}</Link>
-            <Link href="/methodology" className="ml-auto underline">Methodology</Link>
+            <Link href="/stats" className="ml-auto underline">Team stats</Link>
+            <Link href="/blind" className="underline">Blind ranking</Link>
+            <Link href="/methodology" className="underline">Methodology</Link>
           </nav>
         </header>
         <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-6">{children}</main>

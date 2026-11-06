@@ -1,4 +1,5 @@
 import type {
+  AdvancedGameStat,
   CalendarWeek,
   CfbdGame,
   CfbdInfo,
@@ -7,9 +8,11 @@ import type {
   EloRating,
   FpiRating,
   RankingsWeek,
+  ReturningProduction,
   SeasonType,
   SpRating,
   SrsRating,
+  TeamTalent,
 } from "./types";
 
 const BASE_URL = "https://api.collegefootballdata.com";
@@ -143,6 +146,16 @@ export function createCfbdClient(options: CfbdClientOptions) {
     /** All polls for a season (or one week). Filter to COMMITTEE_POLL in the caller. */
     rankings: (year: number, q: { week?: number; seasonType?: SeasonType | "both" } = {}) =>
       get<RankingsWeek[]>("/rankings", { year, ...q }),
+
+    /** Per team-game efficiency. One call per regular week; omit `week` with seasonType "postseason". */
+    advancedGameStats: (year: number, q: { week?: number; seasonType: SeasonType }) =>
+      get<AdvancedGameStat[]>("/stats/game/advanced", { year, ...q }),
+
+    /** Returning production for a season (prior input for the best-team model). */
+    returningProduction: (year: number) => get<ReturningProduction[]>("/player/returning", { year }),
+
+    /** 247Sports team talent composite for a season. */
+    talent: (year: number) => get<TeamTalent[]>("/talent", { year }),
   };
 }
 

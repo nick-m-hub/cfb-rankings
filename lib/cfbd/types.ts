@@ -68,6 +68,9 @@ export interface CfbdGame {
   awayClassification: Classification | null;
   awayConference: string | null;
   awayPoints: number | null;
+  /** Chance each side "deserved" to win given the play-by-play. Absent/null for unplayed games. */
+  homePostgameWinProbability?: number | null;
+  awayPostgameWinProbability?: number | null;
 }
 
 export interface PollRank {
@@ -110,4 +113,32 @@ export interface CfbdInfo {
   remainingCalls: number;
   usedCalls: number;
   resetAt: string;
+}
+
+/** /stats/game/advanced: one row per team per game. Only fields we read are typed. */
+export interface AdvancedGameStat {
+  gameId: number;
+  season: number;
+  week: number;
+  seasonType: SeasonType;
+  team: string;
+  opponent: string;
+  offense: { plays: number; successRate: number | null; ppa: number | null };
+  /** PPA allowed per defensive play (lower is better). */
+  defense?: { plays: number; ppa: number | null };
+}
+
+/** /player/returning: share of last season's production returning. FBS teams only. */
+export interface ReturningProduction {
+  season: number;
+  team: string;
+  conference: string | null;
+  percentPPA: number | null;
+}
+
+/** /talent: 247Sports team talent composite. Some seasons include FCS programs. */
+export interface TeamTalent {
+  year: number;
+  team: string;
+  talent: number | null;
 }

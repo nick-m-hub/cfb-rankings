@@ -3,7 +3,8 @@
 
 import { cacheLife, cacheTag } from "next/cache";
 import { createAdminDb, type Db } from "../ingest/db";
-import type { TeamInput } from "./rank";
+import type { ModelDetails } from "../models/run";
+import type { ReferenceRanks, TeamInput } from "./rank";
 
 export const RANKINGS_TAG = "rankings";
 
@@ -26,18 +27,27 @@ async function one(db: Db, col: "season" | "week", asc: boolean, filter?: { seas
   return row ? row[col] : null;
 }
 
-/** Max stored week per season, newest season first. Weeks are contiguous from 1. */
-export async function getAvailableWeeks(): Promise<{ season: number; maxWeek: number }[]> {
+export interface SeasonWeeks {
+  season: number;
+  minWeek: number;
+  maxWeek: number;
+}
+
+/** First and last stored week per season, newest season first. Weeks are contiguous between them. */
+export async function getAvailableWeeks(): Promise<SeasonWeeks[]> {
   "use cache";
   cacheLife("max");
   cacheTag(RANKINGS_TAG);
   const db = createAdminDb();
   const [first, last] = await Promise.all([one(db, "season", true), one(db, "season", false)]);
   if (first === null || last === null) return [];
-  const out: { season: number; maxWeek: number }[] = [];
+  const out: SeasonWeeks[] = [];
   for (let season = last; season >= first; season--) {
-    const maxWeek = await one(db, "week", false, { season });
-    if (maxWeek !== null) out.push({ season, maxWeek });
+    const [minWeek, maxWeek] = await Promise.all([
+      one(db, "week", true, { season }),
+      one(db, "week", false, { season }),
+    ]);
+    if (minWeek !== null && maxWeek !== null) out.push({ season, minWeek, maxWeek });
   }
   return out;
 }
@@ -69,19 +79,73 @@ async function scoresFor(db: Db, season: number, week: number): Promise<ScoreRow
   }
 }
 
+async function detailsFor(db: Db, season: number, week: number): Promise<Map<number, ModelDetails>> {
+  const out = new Map<number, ModelDetails>();
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db
+      .from("model_details")
+      .select("team_id, details")
+      .eq("season", season)
+      .eq("week", week)
+      .order("team_id")
+      .range(from, from + 999);
+    if (error) throw new Error(`model_details: ${error.message}`);
+    for (const r of data) out.set(r.team_id, r.details as ModelDetails);
+    if (data.length < 1000) return out;
+  }
+}
+
+/** Each team's rank this week in every reference (non-composite) system, by z-score among FBS. */
+async function referenceRanksFor(db: Db, season: number, week: number): Promise<Map<number, ReferenceRanks>> {
+  const { data: systems, error } = await db.from("systems").select("id, name").eq("in_composite", false);
+  if (error) throw new Error(`systems: ${error.message}`);
+  const out = new Map<number, ReferenceRanks>();
+  for (const sys of systems ?? []) {
+    const rows: { team_id: number; z_value: number | null }[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error: e } = await db
+        .from("ratings")
+        .select("team_id, z_value")
+        .eq("system_id", sys.id)
+        .eq("season", season)
+        .eq("week", week)
+        .order("team_id")
+        .range(from, from + 999);
+      if (e) throw new Error(`ratings: ${e.message}`);
+      rows.push(...data);
+      if (data.length < 1000) break;
+    }
+    rows
+      .filter((r) => r.z_value !== null)
+      .sort((a, b) => b.z_value! - a.z_value! || a.team_id - b.team_id)
+      .forEach((r, i) => {
+        const cur = out.get(r.team_id) ?? {};
+        cur[sys.name] = i + 1;
+        out.set(r.team_id, cur);
+      });
+  }
+  return out;
+}
+
 export async function getWeekData(season: number, week: number): Promise<WeekData> {
   "use cache";
   cacheLife("max");
   cacheTag(RANKINGS_TAG);
   const db = createAdminDb();
 
-  const [cur, prev, teamsRes] = await Promise.all([
+  const [cur, prev, teamsRes, seasonConf, details, reference] = await Promise.all([
     scoresFor(db, season, week),
     week > 1 ? scoresFor(db, season, week - 1) : Promise.resolve([] as ScoreRow[]),
-    db.from("teams").select("id, name, conference").eq("division", "fbs"),
+    // All teams: season membership comes from composite_scores, not today's division.
+    db.from("teams").select("id, name, conference").range(0, 4999),
+    db.from("team_seasons").select("team_id, conference").eq("season", season).range(0, 4999),
+    detailsFor(db, season, week),
+    referenceRanksFor(db, season, week),
   ]);
   if (teamsRes.error) throw new Error(`teams: ${teamsRes.error.message}`);
+  if (seasonConf.error) throw new Error(`team_seasons: ${seasonConf.error.message}`);
   if (cur.length === 0) return { season, week, teams: [], found: false };
+  const confBy = new Map((seasonConf.data ?? []).map((r) => [r.team_id as number, r.conference as string | null]));
 
   // Records: completed games through this week. FCS opponents count; FCS teams are never shown.
   const wins = new Map<number, number>();
@@ -115,13 +179,15 @@ export async function getWeekData(season: number, week: number): Promise<WeekDat
     teams.push({
       id: t.id,
       name: t.name,
-      conference: t.conference,
+      conference: confBy.has(t.id) ? confBy.get(t.id)! : t.conference,
       wins: wins.get(t.id) ?? 0,
       losses: losses.get(t.id) ?? 0,
       zPred: c.z_pred,
       zResume: c.z_resume,
       prevZPred: p?.z_pred ?? null,
       prevZResume: p?.z_resume ?? null,
+      details: details.get(t.id) ?? null,
+      reference: reference.get(t.id) ?? {},
     });
   }
   return { season, week, teams, found: true };

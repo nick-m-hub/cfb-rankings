@@ -1,6 +1,6 @@
 // Pure row builders for ingest. No I/O, so they are unit-tested.
 
-import type { CfbdGame, CfbdTeam, Poll, RankingsWeek } from "../cfbd/types";
+import type { AdvancedGameStat, CfbdGame, CfbdTeam, Poll, RankingsWeek, ReturningProduction, TeamTalent } from "../cfbd/types";
 import { COMMITTEE_POLL } from "../cfbd/types";
 import type { WeekMap } from "./weeks";
 
@@ -21,6 +21,8 @@ export interface GameRow {
   away_points: number | null;
   neutral_site: boolean;
   completed: boolean;
+  home_postgame_wp: number | null;
+  away_postgame_wp: number | null;
 }
 
 export interface RatingRow {
@@ -38,12 +40,21 @@ export interface CommitteeRow {
   rank: number;
 }
 
-/** Games with at least one FBS side. FCS-vs-FCS games are never needed (FCS is hidden). */
-export function fbsGames(games: readonly CfbdGame[], fbsCfbdIds: ReadonlySet<number>): CfbdGame[] {
-  return games.filter((g) => fbsCfbdIds.has(g.homeId) || fbsCfbdIds.has(g.awayId));
+/**
+ * Games to store: every game with an FBS side, plus FCS-vs-FCS games. FCS teams are never shown, but
+ * their games against each other let the models rate each FCS opponent individually instead of treating
+ * them all as one average FCS team. Games between Division II/III teams are dropped.
+ */
+export function storedGames(games: readonly CfbdGame[], fbsCfbdIds: ReadonlySet<number>): CfbdGame[] {
+  return games.filter(
+    (g) =>
+      fbsCfbdIds.has(g.homeId) ||
+      fbsCfbdIds.has(g.awayId) ||
+      (g.homeClassification === "fcs" && g.awayClassification === "fcs"),
+  );
 }
 
-/** FBS teams for the season, plus every non-FBS opponent they played (division 'fcs'). */
+/** FBS teams for the season, plus every non-FBS team in `games` (division 'fcs'). */
 export function collectTeams(fbsTeams: readonly CfbdTeam[], games: readonly CfbdGame[]): TeamRow[] {
   const out = new Map<number, TeamRow>();
   for (const t of fbsTeams) {
@@ -82,6 +93,8 @@ export function buildGameRows(
       away_points: g.awayPoints,
       neutral_site: g.neutralSite,
       completed: g.completed,
+      home_postgame_wp: g.homePostgameWinProbability ?? null,
+      away_postgame_wp: g.awayPostgameWinProbability ?? null,
     });
   }
   return [...rows.values()];
@@ -140,4 +153,102 @@ export function buildCommitteeRows(
     }
   }
   return [...rows.values()];
+}
+
+export interface TeamSeasonRow {
+  season: number;
+  team_id: number;
+  conference: string | null;
+  division: "fbs" | "fcs";
+}
+
+/** Season membership: every team row collected for the season (FBS plus FCS opponents). */
+export function buildTeamSeasonRows(season: number, teams: readonly TeamRow[], dbIdByCfbd: ReadonlyMap<number, number>): TeamSeasonRow[] {
+  return teams.map((t) => ({ season, team_id: dbIdByCfbd.get(t.cfbd_id)!, conference: t.conference, division: t.division }));
+}
+
+const finiteOrNull = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+export interface GameTeamStatRow {
+  game_id: number;
+  team_id: number;
+  plays: number;
+  success_rate: number;
+  off_ppa: number | null;
+  def_ppa: number | null;
+  def_plays: number | null;
+}
+
+/**
+ * Advanced stats rows for our games. The team is identified through the game itself (CFBD game id
+ * plus the home/away names on that game), so no crosswalk lookup is needed. Rows for games we don't
+ * store (FCS vs FCS) are skipped; a row whose name matches neither side of a stored game is returned
+ * in `unmatched` so ingest can fail loudly.
+ */
+export function buildGameStatRows(
+  stats: readonly AdvancedGameStat[],
+  games: readonly CfbdGame[],
+  dbIdByCfbd: ReadonlyMap<number, number>,
+): { rows: GameTeamStatRow[]; unmatched: string[] } {
+  const byId = new Map(games.map((g) => [g.id, g]));
+  const out = new Map<string, GameTeamStatRow>();
+  const unmatched: string[] = [];
+  for (const s of stats) {
+    const g = byId.get(s.gameId);
+    if (!g) continue;
+    const cfbdId = s.team === g.homeTeam ? g.homeId : s.team === g.awayTeam ? g.awayId : undefined;
+    if (cfbdId === undefined) {
+      unmatched.push(s.team);
+      continue;
+    }
+    const sr = s.offense?.successRate;
+    const plays = s.offense?.plays;
+    if (sr === null || sr === undefined || !plays) continue;
+    const teamId = dbIdByCfbd.get(cfbdId)!;
+    out.set(`${g.id}:${teamId}`, {
+      game_id: g.id,
+      team_id: teamId,
+      plays,
+      success_rate: sr,
+      off_ppa: finiteOrNull(s.offense?.ppa),
+      def_ppa: finiteOrNull(s.defense?.ppa),
+      def_plays: s.defense?.plays ?? null,
+    });
+  }
+  return { rows: [...out.values()], unmatched };
+}
+
+export interface TeamSeasonInputRow {
+  season: number;
+  team_id: number;
+  returning_ppa_pct: number | null;
+  talent: number | null;
+}
+
+/** Merge returning production and talent into one row per team (FBS teams only). */
+export function buildTeamSeasonInputRows(
+  season: number,
+  returning: readonly ReturningProduction[],
+  talent: readonly TeamTalent[],
+  idByName: (name: string) => number | undefined,
+  allowedTeamIds: ReadonlySet<number>,
+): TeamSeasonInputRow[] {
+  const out = new Map<number, TeamSeasonInputRow>();
+  const row = (id: number) => {
+    let r = out.get(id);
+    if (!r) {
+      r = { season, team_id: id, returning_ppa_pct: null, talent: null };
+      out.set(id, r);
+    }
+    return r;
+  };
+  for (const r of returning) {
+    const id = idByName(r.team);
+    if (id !== undefined && allowedTeamIds.has(id) && r.percentPPA !== null) row(id).returning_ppa_pct = r.percentPPA;
+  }
+  for (const t of talent) {
+    const id = idByName(t.team);
+    if (id !== undefined && allowedTeamIds.has(id) && t.talent !== null) row(id).talent = Number(t.talent);
+  }
+  return [...out.values()];
 }

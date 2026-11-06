@@ -75,3 +75,23 @@ test("blend at s = 0, 0.5, 1", () => {
   assert.equal(blendScore(0.5, null, 1), null);
   assert.throws(() => blendScore(1.5, 1, 1));
 });
+
+test("reference systems get z-scores but stay out of composites", () => {
+  const defs: SystemDef[] = [
+    { id: 1, kind: "predictive", higherIsBetter: true },
+    { id: 2, kind: "predictive", higherIsBetter: true, inComposite: false },
+    { id: 3, kind: "resume", higherIsBetter: true },
+  ];
+  const ratings = [
+    ...[10, 20, 30, 40].map((v, i) => ({ systemId: 1, teamId: i + 1, rawValue: v })),
+    ...[40, 30, 20, 10].map((v, i) => ({ systemId: 2, teamId: i + 1, rawValue: v })),
+    ...[1, 2, 3, 4].map((v, i) => ({ systemId: 3, teamId: i + 1, rawValue: v })),
+  ];
+  const { systemZ, composites } = computeWeek(defs, ratings, fbs);
+  assert.equal(systemZ.filter((z) => z.systemId === 2).length, 4);
+  const z1 = zScores([10, 20, 30, 40]);
+  composites.forEach((c, i) => {
+    close(c.zPred!, z1[i]);
+    assert.equal(c.nSystemsPred, 1);
+  });
+});

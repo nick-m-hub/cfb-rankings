@@ -34,7 +34,9 @@ export async function GET(request: Request) {
     const week = currentStoredWeek(calendar, buildWeekMap(calendar), now);
     if (week === null) return Response.json({ skipped: "offseason", season });
 
-    const counts = await ingestSeason({ cfbd, db, season, weeks: [week], updateTeamMeta: true, log: console.log });
+    // Stats for this week and last, so late corrections to last week's numbers are picked up.
+    const statsWeeks = [week - 1, week].filter((w) => w >= 1);
+    const counts = await ingestSeason({ cfbd, db, season, weeks: [week], statsWeeks, updateTeamMeta: true, log: console.log });
     const composite = await computeAndStoreWeek(db, season, week);
 
     revalidateTag(RANKINGS_TAG, { expire: 0 });

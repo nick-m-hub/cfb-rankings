@@ -7,8 +7,8 @@ export async function generateStaticParams() {
   const weeks = await getAvailableWeeks();
   // Cache Components requires at least one result; before the first backfill, emit a placeholder.
   if (weeks.length === 0) return [{ season: "0", week: "1" }];
-  return weeks.slice(0, 1).flatMap(({ season, maxWeek }) =>
-    Array.from({ length: maxWeek }, (_, i) => ({ season: String(season), week: String(i + 1) })),
+  return weeks.slice(0, 1).flatMap(({ season, minWeek, maxWeek }) =>
+    Array.from({ length: maxWeek - minWeek + 1 }, (_, i) => ({ season: String(season), week: String(minWeek + i) })),
   );
 }
 

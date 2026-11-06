@@ -9,8 +9,10 @@
     "lint": "eslint",
     "test": "tsx --test \"lib/**/*.test.ts\"",
     "backfill": "tsx --env-file=.env.local scripts/backfill.ts",
-    "compute": "tsx --env-file=.env.local scripts/compute.ts",
-    "sync-teams": "tsx --env-file=.env.local scripts/sync-teams.ts"
+    "ingest-current": "tsx --env-file=.env.local scripts/ingest-current.ts",
+    "compute":"tsx --env-file=.env.local scripts/compute.ts",
+    "sync-teams": "tsx --env-file=.env.local scripts/sync-teams.ts",
+    "prior-fpi": "tsx --env-file=.env.local scripts/prior-fpi.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

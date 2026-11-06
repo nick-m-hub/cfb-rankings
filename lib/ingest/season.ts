@@ -3,6 +3,7 @@
 // committee row is written for the season.
 
 import type { CfbdClient } from "../cfbd/client";
+import type { AdvancedGameStat } from "../cfbd/types";
 import {
   ALIAS_SOURCE,
   aliasEntriesFromCfbd,
@@ -15,9 +16,12 @@ import { fetchAll, upsertRows, type Db } from "./db";
 import {
   buildCommitteeRows,
   buildGameRows,
+  buildGameStatRows,
   buildRatingRows,
+  buildTeamSeasonInputRows,
+  buildTeamSeasonRows,
   collectTeams,
-  fbsGames,
+  storedGames,
   type RatingRow,
 } from "./transform";
 import { buildWeekMap } from "./weeks";
@@ -36,6 +40,11 @@ export interface IngestSeasonOptions {
    * the current week instead of copying season-level systems onto future weeks.
    */
   weeks?: number[];
+  /**
+   * Stored weeks to fetch advanced game stats for (best-team model input). Defaults to `weeks`.
+   * The cron passes the current and previous week so late stat corrections are picked up.
+   */
+  statsWeeks?: number[];
   log?: (msg: string) => void;
 }
 
@@ -44,6 +53,8 @@ export interface SeasonCounts {
   teams: number;
   games: number;
   committee: number;
+  gameStats: number;
+  priorInputs: number;
   ratings: Record<string, number>;
   /** FBS teams with no rating at all from a system this season (upstream gaps; never imputed). */
   gaps: { team: string; system: string }[];
@@ -66,6 +77,8 @@ const SRC = {
   srs: "cfbd:/ratings/srs",
   elo: "cfbd:/ratings/elo",
   rankings: "cfbd:/rankings",
+  advanced: "cfbd:/stats/game/advanced",
+  returning: "cfbd:/player/returning",
 } as const;
 
 export async function ingestSeason(opts: IngestSeasonOptions): Promise<SeasonCounts> {
@@ -82,7 +95,7 @@ export async function ingestSeason(opts: IngestSeasonOptions): Promise<SeasonCou
   const badWeek = weeks.find((w) => !weekMap.weeks.includes(w));
   if (badWeek !== undefined) throw new Error(`Season ${season} has no stored week ${badWeek}`);
   const fbsCfbdIds = new Set(fbsTeams.map((t) => t.id));
-  const games = fbsGames(allGames, fbsCfbdIds);
+  const games = storedGames(allGames, fbsCfbdIds);
 
   // 1. Teams (FBS plus the FCS opponents games reference).
   const teamRows = collectTeams(fbsTeams, games);
@@ -101,9 +114,10 @@ export async function ingestSeason(opts: IngestSeasonOptions): Promise<SeasonCou
   await upsertRows(db, "team_aliases", uniqueAliases, "alias,source");
   const crosswalk = createCrosswalk(await fetchAll<AliasRow>(db, "team_aliases", "alias,source,team_id"));
 
-  // 3. Games.
+  // 3. Games, plus season membership (teams.division only reflects the newest season).
   const gameRows = buildGameRows(games, weekMap, dbIdByCfbd);
   await upsertRows(db, "games", gameRows, "id");
+  await upsertRows(db, "team_seasons", buildTeamSeasonRows(season, teamRows, dbIdByCfbd), "season,team_id");
 
   // 4. Fetch ratings and committee polls, resolve every name before writing anything.
   const [sp, fpi, srs, rankings] = await Promise.all([
@@ -117,6 +131,15 @@ export async function ingestSeason(opts: IngestSeasonOptions): Promise<SeasonCou
   for (const w of weeks) {
     eloByWeek.set(w, await cfbd.ratingsElo(season, w === weekMap.postseason ? undefined : w));
   }
+
+  // Model inputs: advanced game stats (per stored week) and preseason prior inputs.
+  const statsWeeks = opts.statsWeeks ?? weeks;
+  const advanced: AdvancedGameStat[] = [];
+  for (const w of statsWeeks) {
+    if (w === weekMap.postseason) advanced.push(...(await cfbd.advancedGameStats(season, { seasonType: "postseason" })));
+    else advanced.push(...(await cfbd.advancedGameStats(season, { week: w, seasonType: "regular" })));
+  }
+  const [returning, talent] = await Promise.all([cfbd.returningProduction(season), cfbd.talent(season)]);
 
   const unmatched: Unmatched[] = [];
   const resolve = (names: string[], source: string, skip?: (n: string) => boolean) => {
@@ -149,6 +172,15 @@ export async function ingestSeason(opts: IngestSeasonOptions): Promise<SeasonCou
     return id;
   });
 
+  const gameStats = buildGameStatRows(advanced, games, dbIdByCfbd);
+  unmatched.push(...gameStats.unmatched.map((name) => ({ name, source: SRC.advanced })));
+  // Returning production lists FBS teams only; resolve loudly like SRS (skip non-FBS conferences).
+  const returningConference = new Map(returning.map((r) => [r.team, r.conference]));
+  resolve(returning.map((r) => r.team), SRC.returning, (n) => !fbsConferences.has(returningConference.get(n) ?? null));
+  // Talent mixes in FCS programs with no conference field, so unknown names are skipped; FBS teams
+  // missing a talent value show up in the gaps report below.
+  const inputRows = buildTeamSeasonInputRows(season, returning, talent, (n) => crosswalk.lookup(n), fbsDbIds);
+
   if (unmatched.length > 0) {
     const seen = new Map(unmatched.map((u) => [`${u.source}\u0000${u.name}`, u]));
     throw new SeasonUnmatchedError(season, [...seen.values()]);
@@ -180,6 +212,11 @@ export async function ingestSeason(opts: IngestSeasonOptions): Promise<SeasonCou
     const have = new Set(rows.map((r) => r.team_id));
     for (const id of fbsDbIds) if (!have.has(id)) gaps.push({ team: nameOf.get(id)!, system });
   }
+  const inputsBy = new Map(inputRows.map((r) => [r.team_id, r]));
+  for (const id of fbsDbIds) {
+    if (inputsBy.get(id)?.returning_ppa_pct == null) gaps.push({ team: nameOf.get(id)!, system: "returning production" });
+    if (inputsBy.get(id)?.talent == null) gaps.push({ team: nameOf.get(id)!, system: "talent" });
+  }
 
   const counts: Record<string, number> = {};
   for (const [name, rows] of Object.entries(ratingRows)) {
@@ -187,8 +224,19 @@ export async function ingestSeason(opts: IngestSeasonOptions): Promise<SeasonCou
     counts[name] = rows.length;
   }
   await upsertRows(db, "committee_ranks", committee, "season,week,team_id");
+  await upsertRows(db, "game_team_stats", gameStats.rows, "game_id,team_id");
+  await upsertRows(db, "team_season_inputs", inputRows, "season,team_id");
 
-  const result = { season, teams: teamRows.length, games: gameRows.length, committee: committee.length, ratings: counts, gaps };
+  const result = {
+    season,
+    teams: teamRows.length,
+    games: gameRows.length,
+    committee: committee.length,
+    gameStats: gameStats.rows.length,
+    priorInputs: inputRows.length,
+    ratings: counts,
+    gaps,
+  };
   log(`${season}: ${JSON.stringify({ ...result, gaps: gaps.length })}`);
   return result;
 }

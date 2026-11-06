@@ -9,6 +9,8 @@ export interface SystemDef {
   id: number;
   kind: SystemKind;
   higherIsBetter: boolean;
+  /** False for reference systems: they get z-scores but don't feed the composites. Default true. */
+  inComposite?: boolean;
 }
 
 export interface RawRating {
@@ -79,8 +81,10 @@ export function computeWeek(
   // Equal-weight mean of available z per side.
   const sums = new Map<number, { pred: number[]; resume: number[] }>();
   for (const { systemId, teamId, z } of systemZ) {
+    const sys = kindOf.get(systemId)!;
+    if (sys.inComposite === false) continue;
     const entry = sums.get(teamId) ?? { pred: [], resume: [] };
-    (kindOf.get(systemId)!.kind === "predictive" ? entry.pred : entry.resume).push(z);
+    (sys.kind === "predictive" ? entry.pred : entry.resume).push(z);
     sums.set(teamId, entry);
   }
 

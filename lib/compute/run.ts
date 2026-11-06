@@ -2,12 +2,14 @@
 // Idempotent upserts; shared by the compute script and (later) the cron route.
 
 import { upsertRows, type Db } from "../ingest/db";
+import { lastPlayedWeek, loadModelSeason, storeModelWeek, type ModelSeason } from "../models/run";
 import { computeWeek, type SystemKind } from "./composite";
 
 interface SystemRow {
   id: number;
   kind: SystemKind;
   higher_is_better: boolean;
+  in_composite: boolean;
 }
 interface RatingDbRow {
   system_id: number;
@@ -35,10 +37,27 @@ export async function ratingWeeks(db: Db, season: number): Promise<number[]> {
   return [...weeks].sort((a, b) => a - b);
 }
 
-export async function computeAndStoreWeek(db: Db, season: number, week: number) {
-  const systems = await select<SystemRow>(db.from("systems").select("id, kind, higher_is_better"), "select systems");
-  const fbs = await select<{ id: number }>(db.from("teams").select("id").eq("division", "fbs"), "select teams");
-  const fbsIds = new Set(fbs.map((t) => t.id));
+/** Weeks to compute for a season: 1 through the last week with a completed game or stored rating. */
+export async function computeWeeks(db: Db, season: number, model?: ModelSeason): Promise<number[]> {
+  const rated = await ratingWeeks(db, season);
+  const last = Math.max(lastPlayedWeek(model ?? (await loadModelSeason(db, season))), ...rated, 0);
+  return Array.from({ length: last }, (_, i) => i + 1);
+}
+
+export interface ComputeOptions {
+  /** Preloaded season inputs (the compute script loads them once per season). */
+  model?: ModelSeason;
+  /** Resume-model simulations; fewer is faster for bulk backfills. */
+  sims?: number;
+}
+
+/** Run the in-house models for the week, then z-scores and composites from all stored ratings. */
+export async function computeAndStoreWeek(db: Db, season: number, week: number, opts: ComputeOptions = {}) {
+  const model = opts.model ?? (await loadModelSeason(db, season));
+  await storeModelWeek(db, model, week, opts.sims);
+
+  const systems = await select<SystemRow>(db.from("systems").select("id, kind, higher_is_better, in_composite"), "select systems");
+  const fbsIds = model.fbsIds;
 
   const ratings: RatingDbRow[] = [];
   for (let from = 0; ; from += 1000) {
@@ -58,7 +77,7 @@ export async function computeAndStoreWeek(db: Db, season: number, week: number) 
   }
 
   const { systemZ, composites } = computeWeek(
-    systems.map((s) => ({ id: s.id, kind: s.kind, higherIsBetter: s.higher_is_better })),
+    systems.map((s) => ({ id: s.id, kind: s.kind, higherIsBetter: s.higher_is_better, inComposite: s.in_composite })),
     ratings.map((r) => ({ systemId: r.system_id, teamId: r.team_id, rawValue: r.raw_value })),
     fbsIds,
   );

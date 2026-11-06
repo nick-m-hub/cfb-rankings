@@ -1,6 +1,10 @@
 // Pure slider math for the rankings table. Runs in the browser; unit-tested.
 
 import { blendScore } from "../compute/blend";
+import type { ModelDetails } from "../models/run";
+
+/** Rank of the team in each reference system this week (SP+, FPI, Elo, SRS); null if missing. */
+export type ReferenceRanks = Record<string, number | null>;
 
 export interface TeamInput {
   id: number;
@@ -13,6 +17,9 @@ export interface TeamInput {
   /** Same team's z-scores the previous week; null if absent. */
   prevZPred: number | null;
   prevZResume: number | null;
+  /** In-house model output for the detail view (absent for weeks computed before the models). */
+  details?: ModelDetails | null;
+  reference?: ReferenceRanks;
 }
 
 export interface RankedTeam extends TeamInput {
@@ -37,7 +44,7 @@ function ranksBy(items: readonly { id: number; name: string; score: number }[]):
   return new Map(sorted.map((t, i) => [t.id, i + 1]));
 }
 
-/** `blend` is the slider value 0..100 (0 = pure resume, 100 = pure predictive). */
+/** `blend` is the slider value 0..100 (0 = pure resume / most deserving, 100 = pure predictive / best team). */
 export function rankTeams(teams: readonly TeamInput[], blend: number): RankedTeam[] {
   const s = blend / 100;
   const now: { id: number; name: string; score: number }[] = [];
