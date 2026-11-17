@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { computeSos, sosRanks } from "./sos";
+import { computeSchedule, computeSos, quadrantCutoffs, quadrantOf, sosRanks } from "./sos";
 import type { ModelGame } from "./types";
 
 let nextId = 1;
@@ -85,4 +85,59 @@ test("teams with no games are absent; ranks put the lowest expected win rate fir
   assert.equal(sos.has(99), false);
   const ranks = sosRanks(new Map([[1, 0.6], [2, 0.4], [3, 0.4], [4, 0.9]]));
   assert.deepEqual([...ranks], [[2, 1], [3, 2], [1, 3], [4, 4]]);
+});
+
+test("quadrant cutoffs are the home-band ranks minus home field, scaled to the FBS count", () => {
+  // 136 teams rated 136 down to 1: home-band ranks 15/40/75 have ratings 122/97/62.
+  const ratings = Array.from({ length: 136 }, (_, i) => 136 - i);
+  assert.deepEqual(quadrantCutoffs(ratings, 0), [122, 97, 62]);
+  assert.deepEqual(quadrantCutoffs(ratings, 3), [119, 94, 59]);
+  // 68 teams: ranks scale to 8/20/38 (rounded).
+  const half = Array.from({ length: 68 }, (_, i) => 68 - i);
+  assert.deepEqual(quadrantCutoffs(half, 0), [61, 49, 31]);
+  const cut: [number, number, number] = [7, 5, 3];
+  assert.equal(quadrantOf(7, cut), 0);
+  assert.equal(quadrantOf(6.9, cut), 1);
+  assert.equal(quadrantOf(3, cut), 2);
+  assert.equal(quadrantOf(-1, cut), 3);
+});
+
+test("with home field, the #15 team is Q1 at home and the road band reaches lower", () => {
+  const ratings = Array.from({ length: 136 }, (_, i) => 136 - i); // rank k has rating 137 - k
+  const hfa = 4;
+  const cut = quadrantCutoffs(ratings, hfa);
+  const rating = (rank: number) => 137 - rank;
+  // Home game: compare rating - hfa. #15 is Q1, #16 is Q2.
+  assert.equal(quadrantOf(rating(15) - hfa, cut), 0);
+  assert.equal(quadrantOf(rating(16) - hfa, cut), 1);
+  // Road game: compare rating + hfa. Q1 reaches #23 (8 rating points = 8 ranks below #15 here).
+  assert.equal(quadrantOf(rating(23) + hfa, cut), 0);
+  assert.equal(quadrantOf(rating(24) + hfa, cut), 1);
+});
+
+test("a site edge moves an opponent across a quadrant cutoff", () => {
+  const cut: [number, number, number] = [10, 0, -10];
+  const opp = 8;
+  const hfa = 3;
+  // Same opponent: on the road it plays like an 11 (Q1), at home like a 5 (Q2).
+  assert.equal(quadrantOf(opp - -hfa, cut), 0);
+  assert.equal(quadrantOf(opp - hfa, cut), 1);
+});
+
+test("quadrant records add up to decided games, skip ties, and put a weak FCS opponent in Q4", () => {
+  // Other FBS teams rout FCS teams too (neutral site, so the margin isn't read as home field), so the FCS pool is rated even without team 1's games.
+  const { games, fbs } = league([game(1, 90, 56, 0), game(3, 91, 45, 3, true), game(4, 92, 42, 7, true), game(5, 93, 48, 0, true), game(6, 94, 41, 10, true)]);
+  const { quadrants } = computeSchedule(games, fbs, noPriors);
+  for (const id of fbs) {
+    const q = quadrants.get(id)!;
+    const decided = games.filter((g) => (g.homeId === id || g.awayId === id) && g.homePoints !== g.awayPoints);
+    assert.equal(q.reduce((a, r) => a + r.w + r.l, 0), decided.length, `team ${id}`);
+  }
+  const t1 = quadrants.get(1)!;
+  assert.ok(t1[3].w >= 1, "FCS blowout win should be in Q4");
+});
+
+test("computeSos matches computeSchedule's win rates", () => {
+  const { games, fbs } = league();
+  assert.deepEqual([...computeSos(games, fbs, noPriors)], [...computeSchedule(games, fbs, noPriors).winPct]);
 });

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { oppStrength } from "@/lib/blind/features";
 import { sortRows, type SortDir } from "@/lib/blind/table";
 import type { OpponentTier } from "@/lib/blind/types";
+import type { QuadrantRecord } from "@/lib/models/sos";
 
 export interface StatsRow {
   id: number;
@@ -22,6 +23,7 @@ export interface StatsRow {
   postgameWp: number | null;
   bestWin: OpponentTier | null;
   worstLoss: OpponentTier | null;
+  quadrants: QuadrantRecord[] | null;
   resumeRank: number | null;
   bestRank: number | null;
 }
@@ -134,6 +136,18 @@ const COLUMNS: Column[] = [
     firstDir: "desc",
     cell: (r) => opponent(r.worstLoss, "none"),
   },
+  ...[0, 1, 2, 3].map(
+    (q): Column => ({
+      id: `q${q + 1}`,
+      label: `Q${q + 1}`,
+      hint: `Record vs. quadrant ${q + 1} opponents (by best-team rating; home Q1-Q4 = top 15 / 16-40 / 41-75 / 76+, neutral and road bands reach further down). Sorts by wins, then fewer losses.`,
+      // Wins first, then fewer losses; teams with no games in the quadrant sort as 0 wins.
+      value: (r) => (r.quadrants ? r.quadrants[q].w - r.quadrants[q].l / 100 : null),
+      firstDir: "desc",
+      align: "right",
+      cell: (r) => (r.quadrants ? `${r.quadrants[q].w}-${r.quadrants[q].l}` : dash),
+    }),
+  ),
   { id: "resume", label: "Resume", value: (r) => r.resumeRank, firstDir: "asc", align: "right", cell: (r) => (r.resumeRank ? `#${r.resumeRank}` : dash) },
   { id: "best", label: "Best team", value: (r) => r.bestRank, firstDir: "asc", align: "right", cell: (r) => (r.bestRank ? `#${r.bestRank}` : dash) },
 ];
@@ -153,7 +167,7 @@ export function StatsTable({ rows }: { rows: StatsRow[] }) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[56rem] text-left text-sm">
+      <table className="w-full min-w-[68rem] text-left text-sm">
         <thead>
           <tr className="border-b border-current/20">
             <th className="py-2 pr-2 text-right opacity-60">#</th>

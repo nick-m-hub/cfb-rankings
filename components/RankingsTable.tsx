@@ -75,7 +75,7 @@ export function RankingsTable({ season, week, teams, seasons }: Props) {
             ))}
           </select>
         </label>
-        <label className="flex items-center gap-2 text-sm" title="AAC, C-USA, MAC, Mountain West, Sun Belt, and the Pac-12 from 2026">
+        <label className="flex items-center gap-2 text-sm" title="AAC, C-USA, MAC, Mountain West, Sun Belt, the Pac-12 from 2026, and UConn">
           <input type="checkbox" checked={g6} onChange={(e) => onG6(e.target.checked)} />
           <span>G6 only</span>
         </label>

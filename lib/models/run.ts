@@ -6,7 +6,7 @@ import type { Db } from "../ingest/db";
 import { upsertRows } from "../ingest/db";
 import { computeBest } from "./best";
 import { bestWinWorstLoss, computeResume, RATING_TIE_TOLERANCE, RESUME_PARAMS } from "./resume";
-import { computeSos, sosRanks } from "./sos";
+import { computeSchedule, sosRanks, type QuadrantRecord } from "./sos";
 import type { GameCredit, ModelGame, PriorInput, TeamGameStat } from "./types";
 
 export const MODEL_SYSTEMS = { resume: "Resume Model", best: "Best-Team Model" } as const;
@@ -169,6 +169,11 @@ export interface ModelDetails {
    * from leave-one-out ratings (see sos.ts). Absent on weeks computed before it existed.
    */
   sos?: { winPct: number; rank: number };
+  /**
+   * Record against quadrants [Q1..Q4] of opponents (site-adjusted, leave-one-out best-team ratings; see
+   * computeSchedule in sos.ts). Absent on weeks computed before it existed.
+   */
+  quadrants?: QuadrantRecord[];
 }
 
 function ranks(values: Map<number, number>): Map<number, number> {
@@ -183,7 +188,8 @@ export function scoreWeek(data: ModelSeason, week: number, sims = RESUME_PARAMS.
   const stats = data.stats.filter((s) => gameIds.has(s.gameId));
   const resume = computeResume(games, data.fbsIds, { sims });
   const best = computeBest(games, data.fbsIds, data.priors, stats);
-  const sosWinPct = computeSos(games, data.fbsIds, data.priors, stats);
+  const schedule = computeSchedule(games, data.fbsIds, data.priors, stats);
+  const sosWinPct = schedule.winPct;
   const sosRank = sosRanks(sosWinPct);
 
   const rankBy = <T>(m: Map<number, T>, f: (t: T) => number | null) => {
@@ -252,6 +258,7 @@ export function scoreWeek(data: ModelSeason, week: number, sims = RESUME_PARAMS.
         defSuccessRateRank: defSr.get(id) ?? null,
       },
       ...(sosWinPct.has(id) ? { sos: { winPct: sosWinPct.get(id)!, rank: sosRank.get(id)! } } : {}),
+      ...(schedule.quadrants.has(id) ? { quadrants: schedule.quadrants.get(id)! } : {}),
     });
   }
   return { resume, best, details };

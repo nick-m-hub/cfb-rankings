@@ -89,10 +89,10 @@ export default async function Methodology() {
       <h2 className="text-lg font-semibold">Blind ranking</h2>
       <p>
         On the blind ranking page you rank three anonymous teams at a time. Each card shows record, average scoring
-        margin, schedule strength (how often a top-12 team would win that schedule, from our best-team ratings), offense and defense efficiency (EPA per play, ranked
+        margin, offense and defense efficiency (EPA per play, ranked
         among FBS teams), postgame win probability (CollegeFootballData&apos;s estimate of how often a team would be
         expected to win with a similar underlying performance, based on efficiency measures rather than the final
-        score, averaged over its games), and best win and worst loss with the opponent hidden. We fit a Plackett-Luce model to your
+        score, averaged over its games), and its record against each opponent quadrant. We fit a Plackett-Luce model to your
         rankings: it learns how much you weight each stat, plus a small per-team adjustment, then scores every FBS
         team. Until your own rounds say otherwise it assumes you like every stat a little, and it picks the next
         cards to be the ones that tell it the most about what you value. That is why about 15 rounds give a usable
@@ -100,6 +100,32 @@ export default async function Methodology() {
         ranking that resets every Monday. To keep one visitor from outvoting everyone, each browser session counts as
         at most 40 votes: beyond that its votes are scaled down, and the 200-vote threshold counts votes the same way. Our own model ranks are deliberately kept off the cards, so the ranking
         reflects your judgment rather than ours.
+      </p>
+      <p>
+        A G6-only switch limits the game to Group of 6 teams (American, Conference USA, MAC, Mountain West, Sun Belt and
+        the Pac-12, plus UConn; the same group as the rankings table&apos;s G6 toggle). In that mode the record, average margin and postgame win probability on each card count only games
+        against other G6 teams; every other stat still covers all games. G6 rounds are saved separately, build their own G6 ranking after 15 rounds,
+        and stay in your browser: they don&apos;t feed the crowd ranking, because they were judged on a different record.
+      </p>
+      <p>
+        Your results also show <strong>your blend</strong>: where your picks sit on the rankings slider. For every
+        slider setting from 0 (most deserving) to 100 (best team) we ask how well that blend of our two models explains
+        the order you actually put each three teams in, and report the setting that explains it best, with the range of
+        settings your rounds can&apos;t tell apart from it (about 95% confidence). It uses your raw rounds, not your
+        fitted ranking, because the fitted ranking leans on default stat weights early on. The two models agree on most
+        teams, so the range is wide after 15 rounds and narrows as you play. The crowd&apos;s blend is the same
+        calculation over this week&apos;s votes, with each session capped as for the crowd ranking.
+      </p>
+      <p>
+        Quadrants group opponents by our best-team rating, and the bands widen toward the bottom, like college
+        basketball&apos;s NET quadrants. For a home game, Q1 is an opponent ranked 1&ndash;15, Q2 16&ndash;40, Q3
+        41&ndash;75 and Q4 76 or lower. Neutral-site and road games reach further down, by the model&apos;s
+        home-field advantage: typically Q1 goes to about #21 on a neutral field and #33 on the road (Q2 about #52 and
+        #63, Q3 about #85 and #100), varying a little each season with the fitted home field. In a typical season a
+        top-12 team wins about 62% of Q1 home games. FCS opponents are placed by their own rating (nearly always
+        Q4). Opponents are rated without any of the team&apos;s own games (as for schedule strength on the stats page), so blowing a team
+        out can&apos;t drop it a quadrant and make the win look worse. Tied games count in no quadrant.
+        The voter model uses two quadrant stats: Q1 wins and Q3/Q4 losses.
       </p>
 
       <h2 className="text-lg font-semibold">Fine print</h2>

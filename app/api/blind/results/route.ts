@@ -13,7 +13,7 @@ export async function GET() {
   // The crowd ranking is optional: names and the personal ranking still load if the votes query fails.
   const crowd = await getCrowdRanking(crowdWeek, blind.season).catch((e) => {
     console.error("crowd ranking failed:", e);
-    return { crowdWeek, votes: 0, ranks: null };
+    return { crowdWeek, votes: 0, ranks: null, blend: null };
   });
   return Response.json({ season: blind.season, week: blind.week, teams: blind.info, crowd });
 }

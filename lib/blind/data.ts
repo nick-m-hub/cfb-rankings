@@ -6,6 +6,9 @@ import { cacheLife, cacheTag } from "next/cache";
 import { createAdminDb } from "../ingest/db";
 import { getLatestWeek, getWeekData, RANKINGS_TAG } from "../rankings/data";
 import { buildFeatures } from "./features";
+import { isG6 } from "../g6";
+import { g6Records } from "./g6";
+import { matchBlend, type BlendMatch } from "./blend";
 import { fitVoter, sessionWeights } from "./model";
 import { CROWD_TAG, MIN_CROWD_VOTES } from "./constants";
 import { meanOrNull, rankBy, weightedMean } from "./stats";
@@ -18,6 +21,9 @@ export interface BlindTeamInfo {
   conference: string | null;
   resumeRank: number | null;
   bestRank: number | null;
+  /** Composite z-scores the rankings slider blends; revealed with names, used for "Your blend". Never on a card. */
+  zPred: number | null;
+  zResume: number | null;
 }
 
 export interface BlindData {
@@ -134,6 +140,19 @@ export async function getBlindData(): Promise<BlindData | null> {
     return { wins: r.w, losses: r.l, fbs: fbsIds.has(g.opponentId), site: g.site };
   };
 
+  const g6Ids = new Set(data.teams.filter((t) => isG6(t.conference, t.name, latest.season)).map((t) => t.id));
+  const g6 = g6Records(
+    games.map((g) => ({
+      homeId: g.home_team_id,
+      awayId: g.away_team_id,
+      homePoints: g.home_points,
+      awayPoints: g.away_points,
+      homePostgameWp: g.home_postgame_wp,
+      awayPostgameWp: g.away_postgame_wp,
+    })),
+    g6Ids,
+  );
+
   const cards: BlindCard[] = [];
   const info: BlindTeamInfo[] = [];
   for (const t of data.teams) {
@@ -158,6 +177,10 @@ export async function getBlindData(): Promise<BlindData | null> {
       postgameWp: meanOrNull(ls.map((l) => l.wp)),
       bestWin: tier(t.details?.resume.bestWin),
       worstLoss: tier(t.details?.resume.worstLoss),
+      quadrants: t.details?.quadrants ?? null,
+      g6Record: g6.has(t.id) ? { w: g6.get(t.id)!.w, l: g6.get(t.id)!.l } : null,
+      g6PostgameWp: g6.get(t.id)?.postgameWp ?? null,
+      g6Margin: g6.get(t.id)?.margin ?? null,
     });
     info.push({
       id: t.id,
@@ -165,6 +188,8 @@ export async function getBlindData(): Promise<BlindData | null> {
       conference: t.conference,
       resumeRank: t.details?.resume.rank ?? null,
       bestRank: t.details?.best.rank ?? null,
+      zPred: t.zPred,
+      zResume: t.zResume,
     });
   }
   const offRanks = rankBy(new Map(cards.map((c) => [c.id, c.offEpa])), "high");
@@ -181,6 +206,8 @@ export interface CrowdRanking {
   votes: number;
   /** Team id -> crowd rank (1 = best); null until MIN_CROWD_VOTES votes have been cast this week. */
   ranks: Record<number, number> | null;
+  /** Where this week's crowd votes sit on the rankings slider (session-capped like the ranking); null with `ranks`. */
+  blend: Pick<BlendMatch, "blend" | "low" | "high"> | null;
 }
 
 /** Crowd ranking from this crowd week's votes. `crowdWeek` is an argument so the cache key rolls over on Monday. */
@@ -208,10 +235,12 @@ export async function getCrowdRanking(crowdWeek: string, season: number): Promis
   }
   // The threshold counts capped votes, so a single heavy voter can't unlock the crowd ranking alone.
   const weights = sessionWeights(sessions);
-  if (weights.reduce((a, b) => a + b, 0) < MIN_CROWD_VOTES) return { crowdWeek, votes: votes.length, ranks: null };
+  if (weights.reduce((a, b) => a + b, 0) < MIN_CROWD_VOTES) return { crowdWeek, votes: votes.length, ranks: null, blend: null };
   const blind = await getBlindData();
-  if (!blind) return { crowdWeek, votes: votes.length, ranks: null };
+  if (!blind) return { crowdWeek, votes: votes.length, ranks: null, blend: null };
   const f = buildFeatures(blind.cards);
   const fit = fitVoter(votes, f, weights);
-  return { crowdWeek, votes: votes.length, ranks: Object.fromEntries(fit.ranks) };
+  const m = matchBlend(votes, new Map(blind.info.map((t) => [t.id, t])), { voteWeights: weights });
+  const blend = m && { blend: m.blend, low: m.low, high: m.high };
+  return { crowdWeek, votes: votes.length, ranks: Object.fromEntries(fit.ranks), blend };
 }

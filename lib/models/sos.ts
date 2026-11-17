@@ -32,14 +32,66 @@ export interface SosOptions {
   benchmarkRank?: number;
 }
 
-/** Benchmark team's expected win rate against each team's schedule so far. Teams with no games are absent. */
-export function computeSos(
+/** W-L against one quadrant of opponents. */
+export interface QuadrantRecord {
+  w: number;
+  l: number;
+}
+
+/**
+ * Quadrant edges for a HOME game: the lowest opponent rank that still counts as Q1 / Q2 / Q3, out of
+ * 136 FBS teams (scaled to the actual count). Neutral and road bands follow from home field: the edge is
+ * a rating, so a road opponent clears it with `hfa` points to spare (Q1 reaches ~#33 on the road).
+ * Chosen 2026-11-06 (Nick): bands widen toward the bottom, like basketball's NET quadrants.
+ */
+export const HOME_QUADRANT_RANKS = [15, 40, 75] as const;
+const QUADRANT_REFERENCE_TEAMS = 136;
+
+/**
+ * Site-adjusted rating cutoffs for quadrants 1-3: the FBS ratings at the home-band ranks, minus home field
+ * (a home opponent's rating is compared after subtracting `hfa`). `ratings` should exclude the team itself.
+ */
+export function quadrantCutoffs(ratings: readonly number[], hfa: number): [number, number, number] {
+  const sorted = [...ratings].sort((a, b) => b - a);
+  const n = sorted.length;
+  const at = (rank: number) => {
+    if (!n) return 0;
+    const k = Math.min(n, Math.max(1, Math.round((rank * n) / QUADRANT_REFERENCE_TEAMS)));
+    return sorted[k - 1] - hfa;
+  };
+  const [a, b, c] = HOME_QUADRANT_RANKS;
+  return [at(a), at(b), at(c)];
+}
+
+/** 0-based quadrant (0 = Q1, hardest) for a site-adjusted opponent rating. */
+export function quadrantOf(effRating: number, cutoffs: readonly [number, number, number]): number {
+  if (effRating >= cutoffs[0]) return 0;
+  if (effRating >= cutoffs[1]) return 1;
+  if (effRating >= cutoffs[2]) return 2;
+  return 3;
+}
+
+export interface Schedule {
+  /** Benchmark team's expected win rate against each team's schedule (lower = harder). */
+  winPct: Map<number, number>;
+  /**
+   * Record against each quadrant [Q1, Q2, Q3, Q4] of opponents, by the same leave-one-out ratings.
+   * Home bands are opponent ranks 1-15 / 16-40 / 41-75 / 76+ (HOME_QUADRANT_RANKS); opponent ratings are
+   * site-adjusted, so neutral and road bands reach further down (about 21/52/85 and 33/63/100), like
+   * basketball's NET quadrants. FCS opponents are placed by their own rating.
+   * Scoreboard ties count in neither column.
+   */
+  quadrants: Map<number, QuadrantRecord[]>;
+}
+
+/** Schedule strength and quadrant records; both use one fit per team. Teams with no games are absent. */
+export function computeSchedule(
   games: readonly ModelGame[],
   fbsIds: ReadonlySet<number>,
   priors: ReadonlyMap<number, PriorInput>,
   stats: readonly TeamGameStat[] = [],
   opts: SosOptions = {},
-): Map<number, number> {
+): Schedule {
   const leaveOneOut = opts.leaveOneOut ?? true;
   const nth = opts.benchmarkRank ?? RESUME_PARAMS.benchmarkRank;
   const played = games.filter((g) => fbsIds.has(g.homeId) || fbsIds.has(g.awayId));
@@ -51,26 +103,47 @@ export function computeSos(
   }
   const shared = leaveOneOut ? null : computeBestRatings(played, fbsIds, priors, stats);
 
-  /** Nth-best FBS rating in a fit, not counting the team itself (whose own games may be left out). */
-  const benchOf = (ratings: ReadonlyMap<number, number>, self: number) => {
-    const others = [...ratings].filter(([id]) => id !== self).map(([, r]) => r).sort((a, b) => b - a);
-    return others.length ? others[Math.min(nth, others.length) - 1] : 0;
-  };
-  const out = new Map<number, number>();
+  const winPct = new Map<number, number>();
+  const quadrants = new Map<number, QuadrantRecord[]>();
   for (const [teamId, teamGames] of byTeam) {
     const fit = shared ?? computeBestRatings(played.filter((g) => g.homeId !== teamId && g.awayId !== teamId), fbsIds, priors, stats);
+    // FBS ratings in this fit, not counting the team itself (whose own games may be left out).
+    const others = [...fit.ratings].filter(([id]) => id !== teamId).map(([, r]) => r).sort((a, b) => b - a);
+    const bench = others.length ? others[Math.min(nth, others.length) - 1] : 0;
+    const cutoffs = quadrantCutoffs(others, fit.hfa);
+    const quad: QuadrantRecord[] = [0, 1, 2, 3].map(() => ({ w: 0, l: 0 }));
     let total = 0;
     for (const g of teamGames) {
       const home = g.homeId === teamId;
       const opp = home ? g.awayId : g.homeId;
       const oppRating = fbsIds.has(opp) ? fit.ratings.get(opp)! : (fit.fcsRatings.get(opp) ?? fit.fcsRating);
-      // Expected margin for the benchmark team standing in this team's place.
+      // The team's edge from the site: positive at home.
       const site = g.neutral ? 0 : home ? fit.hfa : -fit.hfa;
-      total += normCdf((benchOf(fit.ratings, teamId) + site - oppRating) / SOS_SD);
+      // Expected margin for the benchmark team standing in this team's place.
+      total += normCdf((bench + site - oppRating) / SOS_SD);
+      const pf = home ? g.homePoints : g.awayPoints;
+      const pa = home ? g.awayPoints : g.homePoints;
+      if (pf !== pa) {
+        const q = quad[quadrantOf(oppRating - site, cutoffs)];
+        if (pf > pa) q.w++;
+        else q.l++;
+      }
     }
-    out.set(teamId, total / teamGames.length);
+    winPct.set(teamId, total / teamGames.length);
+    quadrants.set(teamId, quad);
   }
-  return out;
+  return { winPct, quadrants };
+}
+
+/** Benchmark team's expected win rate against each team's schedule so far. Teams with no games are absent. */
+export function computeSos(
+  games: readonly ModelGame[],
+  fbsIds: ReadonlySet<number>,
+  priors: ReadonlyMap<number, PriorInput>,
+  stats: readonly TeamGameStat[] = [],
+  opts: SosOptions = {},
+): Map<number, number> {
+  return computeSchedule(games, fbsIds, priors, stats, opts).winPct;
 }
 
 /** 1 = hardest schedule (lowest expected win rate). Ties break by id. */

@@ -30,6 +30,7 @@ async function StatsContent() {
       postgameWp: c.postgameWp,
       bestWin: c.bestWin,
       worstLoss: c.worstLoss,
+      quadrants: c.quadrants,
       resumeRank: t.resumeRank,
       bestRank: t.bestRank,
     };
