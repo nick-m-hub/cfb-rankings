@@ -11,6 +11,10 @@ export interface TeamInput {
   id: number;
   name: string;
   conference: string | null;
+  /** CFBD id, for the self-hosted logo (public/logos). */
+  cfbdId?: number;
+  /** Team accent color (see accentColor in lib/teams/colors.ts); null if none usable. */
+  color?: string | null;
   wins: number;
   losses: number;
   zPred: number | null;

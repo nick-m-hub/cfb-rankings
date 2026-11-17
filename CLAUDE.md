@@ -33,6 +33,7 @@ npm run ingest-current [-- --all-weeks]                  # current season; --all
 npm run compute -- --from 2014 --to 2026 [--sims 1000]  # models + composites, no API calls (~2–5s/week; all seasons ~12 min)
 npm run sync-teams [-- --season 2026]                    # refresh names/conferences/aliases from CFBD
 npm run prior-fpi -- --season 2013                       # store a season's FPI as the next season's prior (2013 done)
+npm run sync-logos [-- --force]                          # team colors -> teams, logos -> public/logos (CDN, ≤1 CFBD call)
 ```
 
 Required env vars (copy `.env.example` to `.env.local`): `CFBD_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (server/scripts only), `CRON_SECRET`, `REVALIDATE_SECRET`.
@@ -53,6 +54,12 @@ This is Next 16 / React 19 with breaking changes from older versions. Per AGENTS
 - **Frontend**: `/rankings` and `/rankings/[season]/[week]` are static per week, revalidated on demand after ingest (no time-based revalidation). The slider value lives in the URL (`?blend=70`). `/methodology` explains the inputs; keep it in sync when behavior changes. Mobile-first.
 - **API routes**: `/api/cron/ingest`; `/api/blind/vote` (POST), `/api/blind/results` (GET, after `connection()`), `/api/blind/names` (GET, exactly three ids).
 - **Phase boundaries**: learned weights, backtesting, margin caps and game grades are Phase 2 (new `model_weights` table); don't add schema or code for them now, but don't make choices that would require migrating existing tables.
+
+## Design and team branding
+
+- 2026-11-17 (Nick): clean editorial look, light first with dark mode by OS setting. Tokens live in `app/globals.css` (`bg`, `surface`, `ink`, `muted`, `line`, `accent`, `up`, `down`) and are used as Tailwind classes (`text-muted`, `border-line`, `bg-accent`); don't reintroduce `current/` opacity colors. Fonts: Geist for UI, Newsreader (`font-display`) for titles. Shared primitives in `components/ui` (`PageHeader`, `Card`, `Button`, `Select`, `Toggle`); header nav is `components/SiteNav.tsx`.
+- Logos are self-hosted: `public/logos/{cfbd_id}.png` and `public/logos/dark/{cfbd_id}.png` (128px, from CFBD's image CDN, every team FBS since 2014), rendered by `components/TeamLogo.tsx` (initials fallback). `teams.color` / `alt_color` (migration `20261117000000_team_colors.sql`) are filled by `sync-logos` and `sync-teams`, not the shared ingest; `accentColor` in `lib/teams/colors.ts` skips near-white/near-black. Run `npm run sync-logos` when a team joins FBS.
+- Logos and colors identify teams, so they ship only with names (`TeamInput`, `BlindTeamInfo`, `/api/blind/names` `logos`), never on `BlindCard`.
 
 ## Models (`lib/models/`)
 

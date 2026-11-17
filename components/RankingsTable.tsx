@@ -3,6 +3,8 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { DEFAULT_BLEND } from "@/lib/site";
+import { TeamLogo } from "./TeamLogo";
+import { Card, Select, Toggle } from "./ui";
 import type { SeasonWeeks } from "@/lib/rankings/data";
 import { parseBlend, rankG6, rankTeams, type FilteredTeam, type TeamInput } from "@/lib/rankings/rank";
 
@@ -46,11 +48,10 @@ export function RankingsTable({ season, week, teams, seasons }: Props) {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap gap-3">
-        <label className="text-sm">
-          <span className="mr-2">Season</span>
-          <select
-            className="rounded border border-current/30 bg-transparent px-2 py-1"
+      <Card className="mb-6 p-4 sm:p-5">
+        <div className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-3">
+          <Select
+            label="Season"
             value={season}
             onChange={(e) => {
               const s = Number(e.target.value);
@@ -59,33 +60,30 @@ export function RankingsTable({ season, week, teams, seasons }: Props) {
             }}
           >
             {seasons.map((s) => (
-              <option key={s.season} value={s.season} className="text-black">{s.season}</option>
+              <option key={s.season} value={s.season}>{s.season}</option>
             ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          <span className="mr-2">Week</span>
-          <select
-            className="rounded border border-current/30 bg-transparent px-2 py-1"
-            value={week}
-            onChange={(e) => go(season, Number(e.target.value))}
-          >
+          </Select>
+          <Select label="Week" value={week} onChange={(e) => go(season, Number(e.target.value))}>
             {Array.from({ length: range.maxWeek - range.minWeek + 1 }, (_, i) => range.minWeek + i).map((w) => (
-              <option key={w} value={w} className="text-black">{w}</option>
+              <option key={w} value={w}>{w}</option>
             ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-2 text-sm" title="AAC, C-USA, MAC, Mountain West, Sun Belt, the Pac-12 from 2026, and UConn">
-          <input type="checkbox" checked={g6} onChange={(e) => onG6(e.target.checked)} />
-          <span>G6 only</span>
-        </label>
-      </div>
+          </Select>
+          <div className="sm:ml-auto">
+            <Toggle
+              checked={g6}
+              onChange={onG6}
+              label="G6 only"
+              title="AAC, C-USA, MAC, Mountain West, Sun Belt, the Pac-12 from 2026, and UConn"
+            />
+          </div>
+        </div>
 
-      <div className="mb-6 rounded border border-current/20 p-3">
-        <div className="mb-1 flex justify-between text-sm font-medium">
-          <span>Most deserving</span>
-          <span className="hidden opacity-70 sm:inline">{blendLabel(blend)}</span>
-          <span>Best team</span>
+        <div className="mb-2 flex items-end justify-between gap-3 text-sm">
+          <span className="font-semibold">Most deserving</span>
+          <span className="hidden rounded-full bg-accent/10 px-2.5 py-0.5 text-xs font-medium text-accent sm:inline">
+            {blendLabel(blend)}
+          </span>
+          <span className="text-right font-semibold">Best team</span>
         </div>
         <input
           type="range"
@@ -95,35 +93,45 @@ export function RankingsTable({ season, week, teams, seasons }: Props) {
           value={blend}
           onChange={(e) => onBlend(Number(e.target.value))}
           aria-label="Blend between most deserving (0) and best team (100)"
-          className="w-full"
+          className="blend w-full"
+          style={{ "--fill": `${blend}%` } as React.CSSProperties}
         />
-        <p className="mt-1 text-center text-xs opacity-70 sm:hidden">{blendLabel(blend)}</p>
-        <p className="mt-1 text-xs opacity-70">
-          Most deserving: what each team&apos;s results have earned. Best team: who would win the next game. Tap a team
-          for details.
+        <p className="mt-2 text-center text-xs font-medium text-accent sm:hidden">{blendLabel(blend)}</p>
+        <p className="mt-3 text-xs leading-relaxed text-muted">
+          <strong className="font-semibold text-ink">Most deserving</strong>: what each team&apos;s results have earned.{" "}
+          <strong className="font-semibold text-ink">Best team</strong>: who would win the next game. Tap a team for
+          details.
         </p>
-      </div>
+      </Card>
 
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="border-b border-current/20">
-            <th className="py-2 pr-2">#</th>
-            {g6 && <th className="py-2 pr-2 text-xs font-normal opacity-70">FBS</th>}
-            <th className="py-2 pr-2">Team</th>
-            <th className="hidden py-2 pr-2 sm:table-cell">Conf</th>
-            <th className="py-2 pr-2">Record</th>
-            <th className="py-2 pr-2 text-right">Score</th>
-            <th className="hidden py-2 pr-2 text-right sm:table-cell">Deserving</th>
-            <th className="hidden py-2 pr-2 text-right sm:table-cell">Best</th>
-            <th className="hidden py-2 text-right sm:table-cell">Chg</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((t) => (
-            <RowGroup key={t.id} t={t} g6={g6} expanded={open === t.id} onToggle={() => setOpen(open === t.id ? null : t.id)} />
-          ))}
-        </tbody>
-      </table>
+      <Card className="overflow-hidden">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-line bg-ink/[0.03] text-xs uppercase tracking-wide text-muted">
+            <tr>
+              <th className="w-10 py-2.5 pl-3 pr-1 font-medium sm:w-12 sm:pl-4 sm:pr-2">#</th>
+              {g6 && <th className="py-2.5 pr-2 font-medium normal-case tracking-normal">FBS</th>}
+              <th className="py-2.5 pr-2 font-medium">Team</th>
+              <th className="py-2.5 pr-2 font-medium">Record</th>
+              <th className="py-2.5 pr-3 text-right font-medium sm:pr-2">Score</th>
+              <th className="hidden py-2.5 pr-2 text-right font-medium sm:table-cell">Deserving</th>
+              <th className="hidden py-2.5 pr-2 text-right font-medium sm:table-cell">Best</th>
+              <th className="hidden py-2.5 pr-4 text-right font-medium sm:table-cell">Chg</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((t) => (
+              <RowGroup
+                key={t.id}
+                t={t}
+                g6={g6}
+                cutoff={!g6 && t.rank === 25 && rows.length > 25}
+                expanded={open === t.id}
+                onToggle={() => setOpen(open === t.id ? null : t.id)}
+              />
+            ))}
+          </tbody>
+        </table>
+      </Card>
     </div>
   );
 }
@@ -134,10 +142,10 @@ function blendLabel(b: number) {
   return `${100 - b}% deserving · ${b}% best`;
 }
 
-function change(c: number | null) {
-  if (c === null) return "–";
-  if (c === 0) return "=";
-  return c > 0 ? `▲${c}` : `▼${-c}`;
+function Change({ c }: { c: number | null }) {
+  if (c === null) return <span className="text-muted">–</span>;
+  if (c === 0) return <span className="text-muted">=</span>;
+  return c > 0 ? <span className="text-up">▲{c}</span> : <span className="text-down">▼{-c}</span>;
 }
 
 const signed = (v: number, d = 1) => `${v >= 0 ? "+" : ""}${v.toFixed(d)}`;
@@ -145,23 +153,47 @@ const site = (s: string) => (s === "home" ? "vs" : s === "away" ? "at" : "vs (N)
 
 type Row = FilteredTeam;
 
-function RowGroup({ t, g6, expanded, onToggle }: { t: Row; g6: boolean; expanded: boolean; onToggle: () => void }) {
+function RowGroup({
+  t,
+  g6,
+  cutoff,
+  expanded,
+  onToggle,
+}: {
+  t: Row;
+  g6: boolean;
+  cutoff: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const border = cutoff && !expanded ? "border-b-2 border-b-muted/40" : "border-b border-line";
   return (
     <>
-      <tr className="cursor-pointer border-b border-current/10 hover:bg-current/5" onClick={onToggle} aria-expanded={expanded}>
-        <td className="py-2 pr-2 tabular-nums">{t.rank}</td>
-        {g6 && <td className="py-2 pr-2 text-xs tabular-nums opacity-70">{t.fbsRank}</td>}
-        <td className="py-2 pr-2 font-medium">{t.name}</td>
-        <td className="hidden py-2 pr-2 sm:table-cell">{t.conference ?? ""}</td>
-        <td className="py-2 pr-2 tabular-nums">{t.wins}-{t.losses}</td>
-        <td className="py-2 pr-2 text-right tabular-nums">{t.blended.toFixed(2)}</td>
-        <td className="hidden py-2 pr-2 text-right tabular-nums sm:table-cell">{t.resumeRank ?? "–"}</td>
-        <td className="hidden py-2 pr-2 text-right tabular-nums sm:table-cell">{t.predRank ?? "–"}</td>
-        <td className="hidden py-2 text-right tabular-nums sm:table-cell">{change(t.change)}</td>
+      <tr
+        className={`cursor-pointer transition-colors last:border-0 hover:bg-ink/[0.03] ${expanded ? "bg-ink/[0.03]" : ""} ${border}`}
+        onClick={onToggle}
+        aria-expanded={expanded}
+      >
+        <td className="py-2.5 pl-3 pr-1 text-base font-semibold tabular-nums sm:pl-4 sm:pr-2">{t.rank}</td>
+        {g6 && <td className="py-2.5 pr-2 text-xs tabular-nums text-muted">{t.fbsRank}</td>}
+        <td className="w-full max-w-0 py-2.5 pr-2">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <TeamLogo cfbdId={t.cfbdId} name={t.name} color={t.color} size={28} />
+            <div className="min-w-0">
+              <div className="truncate font-semibold">{t.name}</div>
+              <div className="truncate text-xs text-muted">{t.conference ?? "Independent"}</div>
+            </div>
+          </div>
+        </td>
+        <td className="py-2.5 pr-2 tabular-nums">{t.wins}-{t.losses}</td>
+        <td className="py-2.5 pr-3 text-right font-medium tabular-nums sm:pr-2">{t.blended.toFixed(2)}</td>
+        <td className="hidden py-2.5 pr-2 text-right tabular-nums text-muted sm:table-cell">{t.resumeRank ?? "–"}</td>
+        <td className="hidden py-2.5 pr-2 text-right tabular-nums text-muted sm:table-cell">{t.predRank ?? "–"}</td>
+        <td className="hidden py-2.5 pr-4 text-right text-xs font-medium tabular-nums sm:table-cell"><Change c={t.change} /></td>
       </tr>
       {expanded && (
-        <tr className="border-b border-current/10">
-          <td colSpan={g6 ? 9 : 8} className="pb-3 pt-1">
+        <tr className={border}>
+          <td colSpan={g6 ? 8 : 7} className="px-3 pb-4 pt-1 sm:px-4">
             <Details t={t} />
           </td>
         </tr>
@@ -174,11 +206,25 @@ function Details({ t }: { t: Row }) {
   const d = t.details;
   const ref = Object.entries(t.reference ?? {}).sort(([a], [b]) => a.localeCompare(b));
   return (
-    <div className="grid gap-3 text-xs sm:grid-cols-3">
+    <div
+      className="rounded-lg border border-line border-t-[3px] bg-surface p-4"
+      style={t.color ? { borderTopColor: t.color } : undefined}
+    >
+      <div className="mb-3 flex items-center gap-3">
+        <TeamLogo cfbdId={t.cfbdId} name={t.name} color={t.color} size={40} />
+        <div>
+          <p className="font-display text-lg font-semibold leading-tight">{t.name}</p>
+          <p className="text-xs text-muted">
+            {t.conference ?? "Independent"} · {t.wins}-{t.losses}
+            <span className="sm:hidden"> · Change <Change c={t.change} /></span>
+          </p>
+        </div>
+      </div>
+    <div className="grid gap-4 text-xs sm:grid-cols-3">
       <section>
-        <h3 className="mb-1 font-semibold">Most deserving #{t.resumeRank ?? "–"}</h3>
+        <h3 className="mb-1.5 text-[13px] font-semibold">Most deserving #{t.resumeRank ?? "–"}</h3>
         {d ? (
-          <ul className="space-y-0.5 opacity-90">
+          <ul className="space-y-1 leading-relaxed">
             <li>Resume score {signed(d.resume.score, 2)}</li>
             <li>Top-12 odds {Math.round(d.resume.topOdds * 100)}% · likely rank {d.resume.rankRange[0]}–{d.resume.rankRange[1]}</li>
             <li>
@@ -191,13 +237,13 @@ function Details({ t }: { t: Row }) {
             </li>
           </ul>
         ) : (
-          <p className="opacity-70">No model details for this week.</p>
+          <p className="text-muted">No model details for this week.</p>
         )}
       </section>
       <section>
-        <h3 className="mb-1 font-semibold">Best team #{t.predRank ?? "–"}</h3>
+        <h3 className="mb-1.5 text-[13px] font-semibold">Best team #{t.predRank ?? "–"}</h3>
         {d ? (
-          <ul className="space-y-0.5 opacity-90">
+          <ul className="space-y-1 leading-relaxed">
             <li>Rating {signed(d.best.rating)} pts vs an average FBS team</li>
             <li>Offense {signed(d.best.offense)} (#{d.best.offenseRank}) · Defense {signed(d.best.defense)} (#{d.best.defenseRank})</li>
             {d.best.offSuccessRateRank !== null && (
@@ -206,22 +252,22 @@ function Details({ t }: { t: Row }) {
             <li>This season&apos;s results only: #{d.best.resultsOnlyRank}</li>
           </ul>
         ) : (
-          <p className="opacity-70">No model details for this week.</p>
+          <p className="text-muted">No model details for this week.</p>
         )}
       </section>
       <section>
-        <h3 className="mb-1 font-semibold">Other ratings</h3>
+        <h3 className="mb-1.5 text-[13px] font-semibold">Other ratings</h3>
         {ref.length ? (
-          <ul className="space-y-0.5 opacity-90">
+          <ul className="space-y-1 leading-relaxed">
             {ref.map(([name, r]) => (
               <li key={name}>{name} #{r ?? "–"}</li>
             ))}
           </ul>
         ) : (
-          <p className="opacity-70">Not available for this week.</p>
+          <p className="text-muted">Not available for this week.</p>
         )}
-        <p className="mt-1 opacity-70 sm:hidden">{t.conference ?? "Independent"} · Change {change(t.change)}</p>
       </section>
+    </div>
     </div>
   );
 }

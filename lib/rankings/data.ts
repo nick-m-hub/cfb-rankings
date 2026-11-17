@@ -4,6 +4,7 @@
 import { cacheLife, cacheTag } from "next/cache";
 import { createAdminDb, type Db } from "../ingest/db";
 import type { ModelDetails } from "../models/run";
+import { accentColor } from "../teams/colors";
 import type { ReferenceRanks, TeamInput } from "./rank";
 
 export const RANKINGS_TAG = "rankings";
@@ -137,7 +138,7 @@ export async function getWeekData(season: number, week: number): Promise<WeekDat
     scoresFor(db, season, week),
     week > 1 ? scoresFor(db, season, week - 1) : Promise.resolve([] as ScoreRow[]),
     // All teams: season membership comes from composite_scores, not today's division.
-    db.from("teams").select("id, name, conference").range(0, 4999),
+    db.from("teams").select("id, name, conference, cfbd_id, color, alt_color").range(0, 4999),
     db.from("team_seasons").select("team_id, conference").eq("season", season).range(0, 4999),
     detailsFor(db, season, week),
     referenceRanksFor(db, season, week),
@@ -180,6 +181,8 @@ export async function getWeekData(season: number, week: number): Promise<WeekDat
       id: t.id,
       name: t.name,
       conference: confBy.has(t.id) ? confBy.get(t.id)! : t.conference,
+      cfbdId: t.cfbd_id,
+      color: accentColor(t.color, t.alt_color),
       wins: wins.get(t.id) ?? 0,
       losses: losses.get(t.id) ?? 0,
       zPred: c.z_pred,

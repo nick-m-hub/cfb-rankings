@@ -6,6 +6,7 @@ import { createCfbdClient } from "../lib/cfbd/client";
 import { aliasEntriesFromCfbd, type AliasRow } from "../lib/crosswalk";
 import { createAdminDb, fetchAll, upsertRows } from "../lib/ingest/db";
 import { collectTeams } from "../lib/ingest/transform";
+import { hexColor } from "../lib/teams/colors";
 
 function currentSeason(now = new Date()) {
   return now.getUTCMonth() >= 7 ? now.getUTCFullYear() : now.getUTCFullYear() - 1;
@@ -24,7 +25,8 @@ async function main() {
   const prev = new Map(before.map((t) => [t.cfbd_id, t]));
 
   const fbsTeams = await cfbd.teamsFbs(season);
-  const rows = collectTeams(fbsTeams, []);
+  const colors = new Map(fbsTeams.map((t) => [t.id, { color: hexColor(t.color), alt_color: hexColor(t.alternateColor) }]));
+  const rows = collectTeams(fbsTeams, []).map((r) => ({ ...r, ...colors.get(r.cfbd_id) }));
   await upsertRows(db, "teams", rows, "cfbd_id");
 
   for (const r of rows) {

@@ -5,11 +5,15 @@ import { oppStrength } from "@/lib/blind/features";
 import { sortRows, type SortDir } from "@/lib/blind/table";
 import type { OpponentTier } from "@/lib/blind/types";
 import type { QuadrantRecord } from "@/lib/models/sos";
+import { TeamLogo } from "./TeamLogo";
+import { Card } from "./ui";
 
 export interface StatsRow {
   id: number;
   name: string;
   conference: string | null;
+  cfbdId?: number;
+  color?: string | null;
   wins: number;
   losses: number;
   /** How often a top-12 FBS team would win this schedule (0 to 1); lower = harder. */
@@ -35,6 +39,8 @@ interface Column {
   hint?: string;
   /** Value to sort by; null sorts last. */
   value: (r: StatsRow) => number | string | null;
+  /** Pinned to the left edge while the table scrolls sideways. */
+  sticky?: boolean;
   /** Direction used the first time the column is clicked: the "best first" way. */
   firstDir: SortDir;
   align?: "right";
@@ -43,14 +49,14 @@ interface Column {
 
 const winPct = (r: StatsRow) => (r.wins + r.losses === 0 ? 0 : r.wins / (r.wins + r.losses));
 const signed = (v: number, d = 1) => `${v >= 0 ? "+" : ""}${v.toFixed(d)}`;
-const dash = <span className="opacity-40">–</span>;
+const dash = <span className="text-muted/60">–</span>;
 
 function opponent(o: OpponentTier | null, none: string) {
-  if (!o) return <span className="opacity-60">{none}</span>;
+  if (!o) return <span className="text-muted">{none}</span>;
   const where = o.site === "home" ? "home" : o.site === "away" ? "road" : "neutral";
   return (
     <>
-      {o.fbs ? `${o.wins}-${o.losses}` : "FCS"} <span className="opacity-60">{where}</span>
+      {o.fbs ? `${o.wins}-${o.losses}` : "FCS"} <span className="text-muted">{where}</span>
     </>
   );
 }
@@ -60,14 +66,26 @@ function rankCell(rank: number | null, value: number | null, digits = 2) {
   return (
     <>
       #{rank}
-      {value !== null && <span className="ml-1 text-xs opacity-60">{signed(value, digits)}</span>}
+      {value !== null && <span className="ml-1 text-xs text-muted">{signed(value, digits)}</span>}
     </>
   );
 }
 
 const COLUMNS: Column[] = [
-  { id: "team", label: "Team", value: (r) => r.name, firstDir: "asc", cell: (r) => <span className="font-medium">{r.name}</span> },
-  { id: "conf", label: "Conf", value: (r) => r.conference, firstDir: "asc", cell: (r) => r.conference ?? "" },
+  {
+    id: "team",
+    label: "Team",
+    value: (r) => r.name,
+    firstDir: "asc",
+    sticky: true,
+    cell: (r) => (
+      <span className="flex items-center gap-2">
+        <TeamLogo cfbdId={r.cfbdId} name={r.name} color={r.color} size={20} />
+        <span className="font-semibold">{r.name}</span>
+      </span>
+    ),
+  },
+  { id: "conf", label: "Conf", value: (r) => r.conference, firstDir: "asc", cell: (r) => <span className="text-muted">{r.conference ?? "Ind."}</span> },
   {
     id: "record",
     label: "Record",
@@ -92,7 +110,7 @@ const COLUMNS: Column[] = [
       ) : (
         <>
           #{r.sosRank}
-          {r.sos !== null && <span className="ml-1 text-xs opacity-60">{Math.round(r.sos * 100)}%</span>}
+          {r.sos !== null && <span className="ml-1 text-xs text-muted">{Math.round(r.sos * 100)}%</span>}
         </>
       ),
   },
@@ -165,27 +183,29 @@ export function StatsTable({ rows }: { rows: StatsRow[] }) {
     setSort((cur) => (cur.id === c.id ? { id: c.id, dir: cur.dir === "asc" ? "desc" : "asc" } : { id: c.id, dir: c.firstDir }));
   }
 
+  // # and Team stay pinned while the table scrolls sideways; the header stays pinned inside the scroll box.
+  const pin = "sticky z-10 bg-inherit";
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[68rem] text-left text-sm">
-        <thead>
-          <tr className="border-b border-current/20">
-            <th className="py-2 pr-2 text-right opacity-60">#</th>
+    <Card className="max-h-[78vh] overflow-auto">
+      <table className="w-full min-w-[68rem] border-separate border-spacing-0 text-left text-sm">
+        <thead className="sticky top-0 z-20 bg-surface text-xs uppercase tracking-wide">
+          <tr className="bg-surface">
+            <th className={`${pin} left-0 w-10 border-b border-line py-2.5 pl-3 pr-2 text-right font-medium text-muted`}>#</th>
             {COLUMNS.map((c) => {
               const active = c.id === sort.id;
               return (
                 <th
                   key={c.id}
                   aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
-                  className={`py-2 pr-3 ${c.align === "right" ? "text-right" : ""}`}
+                  className={`border-b border-line py-2.5 pr-3 ${c.sticky ? `${pin} left-10 border-r` : ""} ${c.align === "right" ? "text-right" : ""}`}
                 >
                   <button
                     onClick={() => onSort(c)}
                     title={c.hint}
-                    className={`whitespace-nowrap font-semibold hover:underline ${active ? "" : "opacity-70"}`}
+                    className={`whitespace-nowrap font-medium uppercase tracking-wide transition hover:text-ink ${active ? "text-accent" : "text-muted"}`}
                   >
                     {c.label}
-                    <span aria-hidden className="ml-1 inline-block w-3 text-xs">
+                    <span aria-hidden className="ml-1 inline-block w-3 text-[10px]">
                       {active ? (sort.dir === "asc" ? "▲" : "▼") : ""}
                     </span>
                   </button>
@@ -196,10 +216,13 @@ export function StatsTable({ rows }: { rows: StatsRow[] }) {
         </thead>
         <tbody>
           {sorted.map((r, i) => (
-            <tr key={r.id} className="border-b border-current/10 hover:bg-current/5">
-              <td className="py-1.5 pr-2 text-right tabular-nums opacity-60">{i + 1}</td>
+            <tr key={r.id} className="bg-surface hover:bg-bg">
+              <td className={`${pin} left-0 border-b border-line py-2 pl-3 pr-2 text-right tabular-nums text-muted`}>{i + 1}</td>
               {COLUMNS.map((c) => (
-                <td key={c.id} className={`whitespace-nowrap py-1.5 pr-3 tabular-nums ${c.align === "right" ? "text-right" : ""}`}>
+                <td
+                  key={c.id}
+                  className={`whitespace-nowrap border-b border-line py-2 pr-3 tabular-nums ${c.sticky ? `${pin} left-10 border-r` : ""} ${c.align === "right" ? "text-right" : ""} ${c.id === sort.id && !c.sticky ? "bg-accent/[0.05]" : ""}`}
+                >
                   {c.cell(r)}
                 </td>
               ))}
@@ -207,6 +230,6 @@ export function StatsTable({ rows }: { rows: StatsRow[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </Card>
   );
 }

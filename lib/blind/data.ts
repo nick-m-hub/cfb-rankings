@@ -19,6 +19,9 @@ export interface BlindTeamInfo {
   id: number;
   name: string;
   conference: string | null;
+  /** Logo and accent color: identifying, so only ever served with the name (never on a card). */
+  cfbdId?: number;
+  color?: string | null;
   resumeRank: number | null;
   bestRank: number | null;
   /** Composite z-scores the rankings slider blends; revealed with names, used for "Your blend". Never on a card. */
@@ -186,6 +189,8 @@ export async function getBlindData(): Promise<BlindData | null> {
       id: t.id,
       name: t.name,
       conference: t.conference,
+      cfbdId: t.cfbdId,
+      color: t.color ?? null,
       resumeRank: t.details?.resume.rank ?? null,
       bestRank: t.details?.best.rank ?? null,
       zPred: t.zPred,

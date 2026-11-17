@@ -12,7 +12,8 @@
     "ingest-current": "tsx --env-file=.env.local scripts/ingest-current.ts",
     "compute":"tsx --env-file=.env.local scripts/compute.ts",
     "sync-teams": "tsx --env-file=.env.local scripts/sync-teams.ts",
-    "prior-fpi": "tsx --env-file=.env.local scripts/prior-fpi.ts"
+    "prior-fpi": "tsx --env-file=.env.local scripts/prior-fpi.ts",
+    "sync-logos": "tsx --env-file=.env.local scripts/sync-logos.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

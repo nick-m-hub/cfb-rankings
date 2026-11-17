@@ -22,7 +22,7 @@ async function Content({ params }: Pick<PageProps<"/rankings/[season]/[week]">, 
 
 export default function Page(props: PageProps<"/rankings/[season]/[week]">) {
   return (
-    <Suspense fallback={<p>Loading…</p>}>
+    <Suspense fallback={<p className="text-muted">Loading…</p>}>
       <Content params={props.params} />
     </Suspense>
   );

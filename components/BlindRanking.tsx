@@ -9,6 +9,8 @@ import type { FitResult } from "@/lib/blind/fit";
 import { defaultWeights, fitVoter } from "@/lib/blind/model";
 import { pickTriple, tripleKey } from "@/lib/blind/pick";
 import type { BlindCard, Vote } from "@/lib/blind/types";
+import { TeamLogo } from "./TeamLogo";
+import { Button, Card, Toggle } from "./ui";
 
 interface Props {
   season: number;
@@ -21,6 +23,8 @@ interface Reveal {
     id: number;
     name: string;
     conference: string | null;
+    cfbdId?: number;
+    color?: string | null;
     resumeRank: number | null;
     bestRank: number | null;
     zPred: number | null;
@@ -35,6 +39,12 @@ interface Reveal {
 }
 
 const ORDINAL = ["1st", "2nd", "3rd"];
+
+/** A team name (and logo) flashed on its card after the round is ranked. */
+interface Revealed {
+  name: string;
+  cfbdId?: number;
+}
 const signed = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
 
 function pickFor(all: Vote[], f: FeatureMatrix): Vote | null {
@@ -60,7 +70,7 @@ const noopSubscribe =() => () => {};
 /** Renders the game only on the client: saved rounds come from localStorage, which the server cannot see. */
 export function BlindRanking(props: Props) {
   const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
-  return mounted ? <BlindModes {...props} /> : <p>Loading…</p>;
+  return mounted ? <BlindModes {...props} /> : <p className="text-muted">Loading…</p>;
 }
 
 const G6_PREF_KEY = "blind-g6";
@@ -114,7 +124,7 @@ function BlindGame({
   const [picked, setPicked] = useState<number[]>([]);
   const [locked, setLocked] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
-  const [names, setNames] = useState<Record<string, string> | null>(null);
+  const [names, setNames] = useState<Record<string, Revealed> | null>(null);
   // "results-all" is the main game's ranking, opened from G6 mode.
   const [view, setView] = useState<"play" | "results" | "results-all">("play");
   // The main game's saved rounds, for its "See my ranking" button while in G6 mode.
@@ -179,7 +189,9 @@ function BlindGame({
     setLocked(true);
     fetch(`/api/blind/names?ids=${vote.join(",")}`, { signal: AbortSignal.timeout(5000) })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("failed"))))
-      .then((d: { names: Record<string, string> }) => setNames(d.names))
+      .then((d: { names: Record<string, string>; logos?: Record<string, number> }) =>
+        setNames(Object.fromEntries(vote.map((id) => [id, { name: d.names[id], cfbdId: d.logos?.[id] }]))),
+      )
       .catch(() => {})
       .finally(() => setTimeout(() => next(all), REVEAL_MS));
   }
@@ -204,44 +216,38 @@ function BlindGame({
 
   return (
     <div>
-      <p className="mb-4 text-sm opacity-80">
+      <p className="-mt-3 mb-5 max-w-2xl text-sm text-muted">
         {season} season through week {week}. Tap the three teams in the order you would rank them: best first. Names
         are hidden until you see your ranking.
       </p>
 
-      <label className="mb-4 inline-flex cursor-pointer items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          role="switch"
-          className="peer sr-only"
+      <Card className="mb-5 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-6">
+        <Toggle
           checked={g6}
           disabled={locked}
-          onChange={(e) => onToggleG6(e.target.checked)}
+          onChange={onToggleG6}
+          label="G6 only"
+          hint={g6 ? `${cards.length} teams, rounds saved separately` : undefined}
         />
-        <span
-          aria-hidden
-          className={`relative h-5 w-9 rounded-full border border-current/40 transition peer-focus-visible:ring-2 peer-disabled:opacity-40 ${g6 ? "bg-current/70" : "bg-current/10"}`}
-        >
-          <span
-            className="absolute top-0.5 h-3.5 w-3.5 rounded-full transition-all"
-            style={{ left: g6 ? "1.05rem" : "0.15rem", background: g6 ? "var(--background)" : "currentColor" }}
-          />
-        </span>
-        <span className="font-medium">G6 only</span>
-        {g6 && <span className="text-xs opacity-60">{cards.length} teams, rounds saved separately</span>}
-      </label>
-
-      <div className="mb-5">
-        <div className="mb-1 flex justify-between text-xs">
-          <span>
-            {rounds} round{rounds === 1 ? "" : "s"}
-          </span>
-          <span>{unlocked ? "Keep going to sharpen it" : `${MIN_PERSONAL_ROUNDS - rounds} more to unlock your ranking`}</span>
+        <div className="flex-1">
+          <div className="mb-1.5 flex justify-between gap-3 text-xs">
+            <span className="font-semibold tabular-nums">
+              {rounds} round{rounds === 1 ? "" : "s"}
+            </span>
+            <span className="text-muted">
+              {unlocked ? "Keep going to sharpen it" : `${MIN_PERSONAL_ROUNDS - rounds} more to unlock your ranking`}
+            </span>
+          </div>
+          <div
+            className="h-2 overflow-hidden rounded-full bg-line"
+            role="progressbar"
+            aria-valuenow={rounds}
+            aria-valuemax={TARGET_PERSONAL_ROUNDS}
+          >
+            <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${pct}%` }} />
+          </div>
         </div>
-        <div className="h-2 overflow-hidden rounded bg-current/15" role="progressbar" aria-valuenow={rounds} aria-valuemax={TARGET_PERSONAL_ROUNDS}>
-          <div className="h-full bg-current/70" style={{ width: `${pct}%` }} />
-        </div>
-      </div>
+      </Card>
 
       {triple ? (
         <div className="grid gap-3 sm:grid-cols-3">
@@ -251,7 +257,7 @@ function BlindGame({
               card={byId.get(id)!}
               label={String.fromCharCode(65 + i)}
               place={picked.indexOf(id)}
-              revealName={names?.[id] ?? null}
+              revealed={names?.[id] ?? null}
               scale={scale}
               g6={g6}
               onPick={() => choose(id)}
@@ -259,46 +265,37 @@ function BlindGame({
           ))}
         </div>
       ) : (
-        <p>You have ranked every combination available. Open your ranking below.</p>
+        <p className="text-muted">You have ranked every combination available. Open your ranking below.</p>
       )}
 
-      <p className="mt-3 text-xs opacity-60">
+      <p className="mt-4 max-w-3xl text-xs leading-relaxed text-muted">
         {g6 && "Record, avg margin and postgame win prob. count only games against other G6 teams; the other stats cover every game. "}
         EPA/play is expected points added per play. Offense and defense ranks are among FBS teams (#1 is best).
         Postgame win prob. is how often a team would be expected to win given the same underlying performance
         (efficiency, not the final score), averaged over its games.
       </p>
 
-      <div className="mt-5 flex flex-wrap gap-3 text-sm">
+      <div className="mt-6 flex flex-wrap gap-3">
         {g6 ? (
           <>
-            <button
-              className="rounded border border-current/40 px-3 py-1.5 font-medium disabled:opacity-40"
-              disabled={!unlocked || locked}
-              onClick={() => setView("results")}
-            >
+            <Button variant="primary" disabled={!unlocked || locked} onClick={() => setView("results")}>
               See my G6 ranking
-            </button>
-            <button
-              className="rounded border border-current/20 px-3 py-1.5 disabled:opacity-40"
+            </Button>
+            <Button
               disabled={(mainVotes?.length ?? 0) < MIN_PERSONAL_ROUNDS || locked}
               onClick={() => setView("results-all")}
             >
               See my ranking
-            </button>
+            </Button>
           </>
         ) : (
-          <button
-            className="rounded border border-current/40 px-3 py-1.5 font-medium disabled:opacity-40"
-            disabled={!unlocked || locked}
-            onClick={() => setView("results")}
-          >
+          <Button variant="primary" disabled={!unlocked || locked} onClick={() => setView("results")}>
             See my ranking
-          </button>
+          </Button>
         )}
-        <button
-          className="rounded border border-current/20 px-3 py-1.5 disabled:opacity-40"
+        <Button
           disabled={rounds === 0 || locked}
+          className={confirmReset ? "border-down text-down" : ""}
           onClick={() => {
             if (!confirmReset) {
               setConfirmReset(true);
@@ -310,7 +307,7 @@ function BlindGame({
           onBlur={() => setConfirmReset(false)}
         >
           {confirmReset ? (g6 ? "Tap again to clear your G6 rounds" : "Tap again to clear all rounds") : "Start over"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -333,12 +330,12 @@ function StatBar({ label, value, frac, centered = false }: { label: string; valu
   return (
     <div>
       <div className="flex justify-between tabular-nums">
-        <span className="opacity-60">{label}</span>
-        <span>{value}</span>
+        <span className="text-muted">{label}</span>
+        <span className="font-semibold">{value}</span>
       </div>
-      <div className="relative mt-1 h-1.5 rounded bg-current/15">
-        <div className="absolute inset-y-0 rounded bg-current/70" style={fill} />
-        {centered && <div className="absolute inset-y-[-2px] left-1/2 w-px bg-current/50" />}
+      <div className="relative mt-1 h-1.5 rounded-full bg-line">
+        <div className="absolute inset-y-0 rounded-full bg-accent/80" style={fill} />
+        {centered && <div className="absolute inset-y-[-2px] left-1/2 w-px bg-muted" />}
       </div>
     </div>
   );
@@ -348,7 +345,7 @@ function CardView({
   card,
   label,
   place,
-  revealName,
+  revealed,
   scale,
   g6,
   onPick,
@@ -358,7 +355,7 @@ function CardView({
   scale: Scale;
   label: string;
   place: number;
-  revealName: string | null;
+  revealed: Revealed | null;
   onPick: () => void;
 }) {
   const chosen = place >= 0;
@@ -366,18 +363,18 @@ function CardView({
     <button
       onClick={onPick}
       aria-pressed={chosen}
-      className={`relative flex flex-col justify-start rounded-lg border p-4 text-left text-sm transition ${chosen ? "border-current bg-current/10" : "border-current/25 hover:border-current/60"}`}
+      className={`relative flex flex-col justify-start rounded-xl border bg-surface p-4 text-left text-sm shadow-sm transition ${chosen ? "border-accent ring-2 ring-accent/25" : "border-line hover:-translate-y-0.5 hover:border-muted hover:shadow-md"}`}
     >
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide opacity-60">Team {label}</span>
-        {chosen && <span className="rounded-full border border-current px-2 py-0.5 text-xs font-semibold">{ORDINAL[place]}</span>}
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted">Team {label}</span>
+        {chosen && <span className="rounded-full bg-accent px-2.5 py-0.5 text-xs font-semibold text-accent-ink">{ORDINAL[place]}</span>}
       </div>
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
-          <p className="text-2xl font-semibold leading-none tabular-nums">
+          <p className="font-display text-3xl font-semibold leading-none tabular-nums">
             {g6 && card.g6Record ? `${card.g6Record.w}-${card.g6Record.l}` : `${card.wins}-${card.losses}`}
           </p>
-          <p className="mt-1 text-xs opacity-60">{g6 ? "Record vs G6" : "Record"}</p>
+          <p className="mt-1 text-xs text-muted">{g6 ? "Record vs G6" : "Record"}</p>
         </div>
       </div>
       <div className="space-y-2.5">
@@ -416,12 +413,14 @@ function CardView({
         })()}
       </div>
       <Quadrants quadrants={card.quadrants} />
-      {revealName && (
+      {revealed && (
         <span
-          className="absolute inset-0 flex items-center justify-center rounded-lg p-3 text-center text-xl font-bold"
-          style={{ background: "color-mix(in srgb, var(--background) 92%, transparent)" }}
+          className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-xl p-3 text-center"
+          style={{ background: "color-mix(in srgb, var(--surface) 94%, transparent)" }}
         >
-          {revealName}
+          {revealed.cfbdId && <TeamLogo cfbdId={revealed.cfbdId} name={revealed.name} size={72} />}
+          <span className="font-display text-2xl font-semibold">{revealed.name}</span>
+          {chosen && <span className="text-xs font-semibold text-accent">Your {ORDINAL[place]}</span>}
         </span>
       )}
     </button>
@@ -435,11 +434,11 @@ const QUADRANT_HINT =
 function Quadrants({ quadrants }: { quadrants: BlindCard["quadrants"] }) {
   return (
     <div className="mt-3" title={QUADRANT_HINT}>
-      <p className="mb-1 text-xs opacity-60">Record vs. opponent quadrant</p>
+      <p className="mb-1 text-xs text-muted">Record vs. opponent quadrant</p>
       <div className="grid grid-cols-4 gap-1 text-center">
         {[0, 1, 2, 3].map((q) => (
-          <div key={q} className="rounded border border-current/15 px-1 py-1">
-            <p className="text-[10px] font-semibold uppercase opacity-60">Q{q + 1}</p>
+          <div key={q} className="rounded-md bg-bg px-1 py-1">
+            <p className="text-[10px] font-semibold uppercase text-muted">Q{q + 1}</p>
             <p className="text-sm font-semibold tabular-nums">{quadrants ? `${quadrants[q].w}-${quadrants[q].l}` : "–"}</p>
           </div>
         ))}
@@ -494,38 +493,36 @@ function Results({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-semibold">{g6 ? "Your G6 ranking" : "Your ranking"}</h2>
-        <button className="text-sm underline" onClick={onBack}>
-          Keep ranking
-        </button>
+        <h2 className="font-display text-2xl font-semibold">{g6 ? "Your G6 ranking" : "Your ranking"}</h2>
+        <Button onClick={onBack}>Keep ranking</Button>
       </div>
-      <p className="mb-4 text-sm opacity-80">
+      <p className="mb-5 text-sm text-muted">
         Built from your {rounds} {g6 ? "G6 " : ""}rounds. The model learns what you reward, then scores every{" "}
         {g6 ? "G6" : "FBS"} team.{g6 && " Resume and Best are overall FBS ranks."}
       </p>
 
       {mine && <YourBlend mine={mine} crowd={g6 ? null : (reveal?.crowd.blend ?? null)} g6={g6} />}
 
-      <section className="mb-5 rounded border border-current/20 p-3">
-        <h3 className="mb-2 text-sm font-semibold">What you value</h3>
+      <Card className="mb-5 p-4">
+        <h3 className="mb-3 text-sm font-semibold">What you value</h3>
         <ul className="space-y-1 text-xs">
           {weights.map((x) => (
             <li key={x.name} className="grid grid-cols-[9rem_1fr] items-center gap-2">
               <span>{x.name}</span>
-              <span className="h-2 rounded bg-current/10">
+              <span className="h-2 rounded-full bg-line">
                 <span
-                  className="block h-full rounded bg-current/60"
+                  className="block h-full rounded-full bg-accent/80"
                   style={{ width: `${Math.max(0, (x.w / maxW) * 100)}%` }}
                 />
               </span>
             </li>
           ))}
         </ul>
-      </section>
+      </Card>
 
       {error && <p className="mb-3 text-sm">Could not load team names. Try again in a moment.</p>}
       {reveal && !g6 && (
-        <p className="mb-3 text-xs opacity-70">
+        <p className="mb-3 text-xs text-muted">
           Crowd ranking resets every Monday.{" "}
           {reveal.crowd.ranks
             ? `Based on ${reveal.crowd.votes} votes this week.`
@@ -533,37 +530,45 @@ function Results({
         </p>
       )}
 
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="border-b border-current/20">
-            <th className="py-2 pr-2">You</th>
-            <th className="py-2 pr-2">Team</th>
-            <th className="hidden py-2 pr-2 sm:table-cell">Conf</th>
-            {!g6 && <th className="py-2 pr-2 text-right">Crowd</th>}
-            <th className="py-2 pr-2 text-right">Resume</th>
-            <th className="py-2 text-right">Best</th>
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map(({ id, rank }) => {
-            const t = byId.get(id);
-            return (
-              <tr key={id} className="border-b border-current/10">
-                <td className="py-2 pr-2 tabular-nums">{rank}</td>
-                <td className="py-2 pr-2 font-medium">{t?.name ?? "…"}</td>
-                <td className="hidden py-2 pr-2 sm:table-cell">{t?.conference ?? ""}</td>
-                {!g6 && <td className="py-2 pr-2 text-right tabular-nums">{reveal?.crowd.ranks?.[id] ?? "–"}</td>}
-                <td className="py-2 pr-2 text-right tabular-nums">{t?.resumeRank ?? "–"}</td>
-                <td className="py-2 text-right tabular-nums">{t?.bestRank ?? "–"}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <Card className="overflow-hidden">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-line bg-ink/[0.03] text-xs uppercase tracking-wide text-muted">
+            <tr>
+              <th className="py-2.5 pl-4 pr-2 font-medium">You</th>
+              <th className="py-2.5 pr-2 font-medium">Team</th>
+              {!g6 && <th className="py-2.5 pr-2 text-right font-medium">Crowd</th>}
+              <th className="py-2.5 pr-2 text-right font-medium">Resume</th>
+              <th className="py-2.5 pr-4 text-right font-medium">Best</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map(({ id, rank }) => {
+              const t = byId.get(id);
+              return (
+                <tr key={id} className="border-b border-line last:border-0">
+                  <td className="py-2 pl-4 pr-2 text-base font-semibold tabular-nums">{rank}</td>
+                  <td className="py-2 pr-2">
+                    <div className="flex items-center gap-2.5">
+                      {t ? <TeamLogo cfbdId={t.cfbdId} name={t.name} color={t.color} size={24} /> : <span className="h-6 w-6" />}
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold">{t?.name ?? "…"}</div>
+                        <div className="truncate text-xs text-muted">{t ? (t.conference ?? "Independent") : ""}</div>
+                      </div>
+                    </div>
+                  </td>
+                  {!g6 && <td className="py-2 pr-2 text-right tabular-nums text-muted">{reveal?.crowd.ranks?.[id] ?? "–"}</td>}
+                  <td className="py-2 pr-2 text-right tabular-nums text-muted">{t?.resumeRank ?? "–"}</td>
+                  <td className="py-2 pr-4 text-right tabular-nums text-muted">{t?.bestRank ?? "–"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Card>
       {rows.length > 25 && (
-        <button className="mt-3 text-sm underline" onClick={() => setAll(!all)}>
+        <Button className="mt-3" onClick={() => setAll(!all)}>
           {all ? "Show top 25" : `Show all ${rows.length}`}
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -588,10 +593,10 @@ function YourBlend({
       className="absolute top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
       style={{ left: `${v}%` }}
     >
-      <span className={`block h-4 w-1 rounded ${strong ? "bg-current" : "bg-current/50"}`} />
+      <span className={`block h-4 w-1 rounded ${strong ? "bg-accent" : "bg-muted"}`} />
       {/* Near either end the label hangs inward instead of centering, so it isn't clipped. */}
       <span
-        className={`absolute top-5 whitespace-nowrap text-[10px] ${strong ? "font-semibold" : "opacity-70"} ${
+        className={`absolute top-5 whitespace-nowrap text-[10px] ${strong ? "font-semibold text-accent" : "text-muted"} ${
           v < 10 ? "left-0" : v > 90 ? "right-0" : ""
         }`}
       >
@@ -600,14 +605,14 @@ function YourBlend({
     </span>
   );
   return (
-    <section className="mb-5 rounded border border-current/20 p-3">
+    <Card className="mb-5 p-4">
       <h3 className="mb-1 text-sm font-semibold">Your blend</h3>
-      <p className="mb-3 text-xs opacity-80">
+      <p className="mb-3 text-xs leading-relaxed text-muted">
         {undecided ? (
           <>Your picks don&apos;t lean toward most deserving or best team yet: every mix fits them about equally well. Play more rounds to find out.</>
         ) : (
           <>
-            Your picks best match a mix of <strong>{mix(mine.blend)}</strong>, which agrees with{" "}
+            Your picks best match a mix of <strong className="text-ink">{mix(mine.blend)}</strong>, which agrees with{" "}
             {Math.round(mine.agreement * 100)}% of your head-to-head choices.
             {mine.high > mine.low &&
               ` Anything from ${mine.low}% to ${mine.high}% best team (the shaded band) fits your picks almost as well${
@@ -617,20 +622,20 @@ function YourBlend({
         )}
         {g6 && " Measured against the overall FBS models."}
       </p>
-      <div className="mb-1 flex justify-between text-[11px] opacity-70">
+      <div className="mb-1 flex justify-between text-[11px] text-muted">
         <span>Most deserving</span>
         <span>Best team</span>
       </div>
-      <div className="relative mb-7 h-2 rounded bg-current/10">
+      <div className="relative mb-7 h-2 rounded-full bg-line">
         {crowd && (
           <span
-            className="absolute inset-y-0 rounded bg-current/10"
+            className="absolute inset-y-0 rounded-full bg-muted/25"
             style={{ left: `${crowd.low}%`, width: `${Math.max(1, crowd.high - crowd.low)}%` }}
           />
         )}
         {!undecided && (
           <span
-            className="absolute inset-y-0 rounded bg-current/30"
+            className="absolute inset-y-0 rounded-full bg-accent/30"
             style={{ left: `${mine.low}%`, width: `${Math.max(1, mine.high - mine.low)}%` }}
           />
         )}
@@ -638,16 +643,16 @@ function YourBlend({
         {!undecided && marker(mine.blend, "You", true)}
       </div>
       {crowd && (
-        <p className="mb-2 text-xs opacity-70">
+        <p className="mb-2 text-xs text-muted">
           This week&apos;s crowd: {mix(crowd.blend)}
           {crowd.high > crowd.low && ` (anything from ${crowd.low}% to ${crowd.high}% best team fits)`}.
         </p>
       )}
       {!undecided && (
-        <Link className="text-xs underline" href={`/rankings?blend=${mine.blend}`}>
+        <Link className="text-xs font-medium text-accent underline underline-offset-2" href={`/rankings?blend=${mine.blend}`}>
           See the rankings with your mix
         </Link>
       )}
-    </section>
+    </Card>
   );
 }

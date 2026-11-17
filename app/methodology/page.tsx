@@ -1,16 +1,40 @@
 import type { Metadata } from "next";
+import { Card, PageHeader } from "@/components/ui";
 import { getLastUpdated } from "@/lib/rankings/data";
 
 export const metadata: Metadata = { title: "Methodology" };
 
+/** Best-team model, walk-forward on FBS-vs-FBS games from week 2 (same numbers as the text below). */
+const ACCURACY = [
+  { label: "2026 (out of sample)", miss: "12.0", winners: "70%" },
+  { label: "2023–2025", miss: "12.4", winners: "72%" },
+  { label: "2016–2022", miss: "12.9", winners: "72%" },
+];
+
 export default async function Methodology() {
   const updated = await getLastUpdated();
   return (
-    <article className="space-y-4 leading-relaxed">
-      <h1 className="text-2xl font-semibold">Methodology</h1>
-      <p className="text-sm opacity-70">Last updated: {updated ? new Date(updated).toUTCString() : "no data yet"}</p>
+    <article>
+      <PageHeader
+        title="Methodology"
+        dek="Two models, one slider: how each team's score is built, how accurate it is, and what it leaves out."
+      >
+        <p className="mt-2 text-xs text-muted">Last updated: {updated ? new Date(updated).toUTCString() : "no data yet"}</p>
+      </PageHeader>
 
-      <h2 className="text-lg font-semibold">Two questions, one slider</h2>
+      <dl className="mb-8 grid max-w-3xl grid-cols-3 gap-3">
+        {ACCURACY.map((a) => (
+          <Card key={a.label} className="p-3 sm:p-4">
+            <dt className="text-xs text-muted">{a.label}</dt>
+            <dd className="mt-1 font-display text-2xl font-semibold tabular-nums sm:text-3xl">{a.miss}</dd>
+            <dd className="text-xs text-muted">pts avg miss · {a.winners} winners</dd>
+          </Card>
+        ))}
+      </dl>
+
+      <div className="prose-site">
+
+      <h2>Two questions, one slider</h2>
       <p>
         Every FBS team gets two scores from our own models. <strong>Most deserving</strong> asks what a team&apos;s
         results have earned. <strong>Best team</strong> asks who would win the next game. The slider mixes them:
@@ -23,8 +47,8 @@ export default async function Methodology() {
         count alongside results; there is no single right mix.
       </p>
 
-      <h2 className="text-lg font-semibold">Most deserving (resume model)</h2>
-      <ul className="list-disc space-y-1 pl-6">
+      <h2>Most deserving (resume model)</h2>
+      <ul>
         <li>
           We rate every team&apos;s strength from this season&apos;s games only (no preseason expectations), using
           scoring margins capped at 21 points and a fitted home-field advantage.
@@ -44,8 +68,8 @@ export default async function Methodology() {
         </li>
       </ul>
 
-      <h2 className="text-lg font-semibold">Best team (predictive model)</h2>
-      <ul className="list-disc space-y-1 pl-6">
+      <h2>Best team (predictive model)</h2>
+      <ul>
         <li>
           A power rating: how many points better a team is than an average FBS team on a neutral field, adjusted for
           opponents and home field.
@@ -71,7 +95,7 @@ export default async function Methodology() {
         </li>
       </ul>
 
-      <h2 className="text-lg font-semibold">Schedule strength</h2>
+      <h2>Schedule strength</h2>
       <p>
         Schedule strength is how often the benchmark team (the 12th-best team, the same one the resume model uses)
         would win a team&apos;s games so far, at the same sites. Lower means harder. Opponents are rated by the
@@ -79,14 +103,14 @@ export default async function Methodology() {
         average team because what separates schedules for a playoff case is how many strong opponents are on them.
       </p>
 
-      <h2 className="text-lg font-semibold">Other ratings</h2>
+      <h2>Other ratings</h2>
       <p>
         Team details also show where each team ranks in SP+, FPI, Elo and SRS for reference. They don&apos;t feed the
         slider. Only Elo is available week by week for past seasons; SP+, FPI and SRS are end-of-season values for
         historical weeks (look-ahead), and we snapshot them weekly going forward.
       </p>
 
-      <h2 className="text-lg font-semibold">Blind ranking</h2>
+      <h2>Blind ranking</h2>
       <p>
         On the blind ranking page you rank three anonymous teams at a time. Each card shows record, average scoring
         margin, offense and defense efficiency (EPA per play, ranked
@@ -128,7 +152,7 @@ export default async function Methodology() {
         The voter model uses two quadrant stats: Q1 wins and Q3/Q4 losses.
       </p>
 
-      <h2 className="text-lg font-semibold">Fine print</h2>
+      <h2>Fine print</h2>
       <p>
         A team&apos;s best win and worst loss are the best team it beat and the worst team it lost to, judged by our
         best-team ratings (FCS opponents are rated from how they actually performed against FBS teams). Ratings
@@ -142,12 +166,14 @@ export default async function Methodology() {
         uses last season&apos;s final FPI, which is known before the season starts.
       </p>
 
-      <h2 className="text-lg font-semibold">Attribution</h2>
+      <h2>Attribution</h2>
       <p>
-        Data from <a className="underline" href="https://collegefootballdata.com">CollegeFootballData.com</a>, including
+        Data from <a href="https://collegefootballdata.com">CollegeFootballData.com</a>, including
         game results, advanced stats, returning production and 247Sports team talent. SP+ is created by Bill Connelly,
         FPI by ESPN; Elo and SRS are computed by CFBD.
+        Team logos come from CollegeFootballData.com and are trademarks of their schools.
       </p>
+      </div>
     </article>
   );
 }

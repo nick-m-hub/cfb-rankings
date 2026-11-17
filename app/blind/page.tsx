@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { BlindRanking } from "@/components/BlindRanking";
+import { PageHeader } from "@/components/ui";
 import { getBlindData } from "@/lib/blind/data";
 
 export const metadata: Metadata = {
@@ -18,8 +19,8 @@ async function BlindContent() {
 export default function BlindPage() {
   return (
     <>
-      <h1 className="mb-2 text-2xl font-semibold">Blind ranking</h1>
-      <Suspense fallback={<p>Loading…</p>}>
+      <PageHeader title="Blind ranking" />
+      <Suspense fallback={<p className="text-muted">Loading…</p>}>
         <BlindContent />
       </Suspense>
     </>

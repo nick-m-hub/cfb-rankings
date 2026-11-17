@@ -12,6 +12,9 @@ export interface CfbdTeam {
   conference: string | null;
   division: string | null;
   classification: Classification | null;
+  /** Hex like "#003594"; may be null or blank. */
+  color?: string | null;
+  alternateColor?: string | null;
 }
 
 /** /ratings/sp. Season-level only: the `week` param is ignored. */

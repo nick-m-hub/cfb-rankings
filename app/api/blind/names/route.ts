@@ -19,11 +19,16 @@ export async function GET(request: Request) {
   if (season === undefined) return Response.json({ error: "no data" }, { status: 503 });
   const [fbs, teams] = await Promise.all([
     db.from("team_seasons").select("team_id").eq("season", season).eq("division", "fbs").in("team_id", ids),
-    db.from("teams").select("id, name").in("id", ids),
+    db.from("teams").select("id, name, cfbd_id").in("id", ids),
   ]);
   if (fbs.error || teams.error) return Response.json({ error: "lookup failed" }, { status: 500 });
   const allowed = new Set((fbs.data as { team_id: number }[]).map((r) => r.team_id));
-  const byId = new Map((teams.data as { id: number; name: string }[]).map((t) => [t.id, t.name]));
+  const rows = teams.data as { id: number; name: string; cfbd_id: number }[];
+  const byId = new Map(rows.map((t) => [t.id, t.name]));
+  const cfbdBy = new Map(rows.map((t) => [t.id, t.cfbd_id]));
   if (!ids.every((id) => allowed.has(id) && byId.has(id))) return Response.json({ error: "unknown team id" }, { status: 400 });
-  return Response.json({ names: Object.fromEntries(ids.map((id) => [id, byId.get(id)])) });
+  return Response.json({
+    names: Object.fromEntries(ids.map((id) => [id, byId.get(id)])),
+    logos: Object.fromEntries(ids.map((id) => [id, cfbdBy.get(id)])),
+  });
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { StatsTable, type StatsRow } from "@/components/StatsTable";
+import { PageHeader } from "@/components/ui";
 import { getBlindData } from "@/lib/blind/data";
 
 export const metadata: Metadata = {
@@ -18,6 +19,8 @@ async function StatsContent() {
       id: c.id,
       name: t.name,
       conference: t.conference,
+      cfbdId: t.cfbdId,
+      color: t.color,
       wins: c.wins,
       losses: c.losses,
       sos: c.sos,
@@ -37,7 +40,7 @@ async function StatsContent() {
   });
   return (
     <>
-      <p className="mb-4 text-sm opacity-80">
+      <p className="-mt-4 mb-4 text-sm text-muted">
         {data.season} season through week {data.week}. Click a column header to sort; click again to reverse.
       </p>
       <StatsTable rows={rows} />
@@ -48,8 +51,8 @@ async function StatsContent() {
 export default function StatsPage() {
   return (
     <>
-      <h1 className="mb-2 text-2xl font-semibold">Team stats</h1>
-      <Suspense fallback={<p>Loading…</p>}>
+      <PageHeader title="Team stats" dek="Every FBS team's record, schedule, efficiency and model ranks in one sortable table." />
+      <Suspense fallback={<p className="text-muted">Loading…</p>}>
         <StatsContent />
       </Suspense>
     </>
