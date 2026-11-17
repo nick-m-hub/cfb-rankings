@@ -31,7 +31,6 @@ interface Reveal {
     zResume: number | null;
   }[];
   crowd: {
-    crowdWeek: string;
     votes: number;
     ranks: Record<string, number> | null;
     blend?: Pick<BlendMatch, "blend" | "low" | "high"> | null;
@@ -524,10 +523,10 @@ function Results({
       {error && <p className="mb-3 text-sm">Could not load team names. Try again in a moment.</p>}
       {reveal && !g6 && (
         <p className="mb-3 text-xs text-muted">
-          Crowd ranking resets every Monday.{" "}
+          The crowd ranking builds all season: every vote refines what the crowd values, applied to this week&apos;s stats.{" "}
           {reveal.crowd.ranks
-            ? `Based on ${reveal.crowd.votes} votes this week.`
-            : `Not enough votes yet this week (${reveal.crowd.votes} so far).`}
+            ? `Based on ${reveal.crowd.votes.toLocaleString()} votes this season.`
+            : `Not enough votes yet this season (${reveal.crowd.votes} so far).`}
         </p>
       )}
 
@@ -575,7 +574,7 @@ function Results({
   );
 }
 
-/** Where the voter's picks (and this week's crowd's) sit on the rankings slider. */
+/** Where the voter's picks (and the season's crowd's) sit on the rankings slider. */
 function YourBlend({
   mine,
   crowd,
@@ -645,7 +644,7 @@ function YourBlend({
       </div>
       {crowd && (
         <p className="mb-2 text-xs text-muted">
-          This week&apos;s crowd: {mix(crowd.blend)}
+          The crowd this season: {mix(crowd.blend)}
           {crowd.high > crowd.low && ` (anything from ${crowd.low}% to ${crowd.high}% best team fits)`}.
         </p>
       )}

@@ -87,21 +87,26 @@ function bestScaleLogLik(x: Float64Array, weights: Float64Array): number {
 /**
  * Matches votes to slider values 0..100. Votes naming a team without both z-scores are skipped; returns null if
  * fewer than `minVotes` are usable. `voteWeights` (aligned with `votes`, default 1) lets the crowd cap each session.
+ * `voteZ` (aligned with `votes`) gives each vote its own z-scores: the season-long crowd scores each vote against
+ * the week it was cast in. Votes without one use `z`.
  */
 export function matchBlend(
   votes: readonly Vote[],
   z: ReadonlyMap<number, BlendZ>,
-  opts: { voteWeights?: readonly number[]; minVotes?: number } = {},
+  opts: { voteWeights?: readonly number[]; minVotes?: number; voteZ?: readonly ReadonlyMap<number, BlendZ>[] } = {},
 ): BlendMatch | null {
   const used: Vote[] = [];
   const weights: number[] = [];
+  const zs: ReadonlyMap<number, BlendZ>[] = [];
   votes.forEach((v, i) => {
     if (new Set(v).size !== 3) return;
-    if (!v.every((id) => { const t = z.get(id); return t && t.zPred !== null && t.zResume !== null; })) return;
+    const zi = opts.voteZ?.[i] ?? z;
+    if (!v.every((id) => { const t = zi.get(id); return t && t.zPred !== null && t.zResume !== null; })) return;
     const w = opts.voteWeights?.[i] ?? 1;
     if (!(w > 0)) return;
     used.push(v);
     weights.push(w);
+    zs.push(zi);
   });
   if (used.length === 0 || used.length < (opts.minVotes ?? 1)) return null;
 
@@ -110,7 +115,7 @@ export function matchBlend(
   const lls: number[] = [];
   for (let s = 0; s <= 100; s++) {
     used.forEach((v, i) => v.forEach((id, j) => {
-      const t = z.get(id)!;
+      const t = zs[i].get(id)!;
       x[3 * i + j] = blendScore(s / 100, t.zPred, t.zResume)!;
     }));
     lls.push(bestScaleLogLik(x, w));
@@ -128,7 +133,7 @@ export function matchBlend(
   let agree = 0;
   let total = 0;
   used.forEach((v, i) => {
-    const sc = v.map((id) => { const t = z.get(id)!; return blendScore(blend / 100, t.zPred, t.zResume)!; });
+    const sc = v.map((id) => { const t = zs[i].get(id)!; return blendScore(blend / 100, t.zPred, t.zResume)!; });
     for (const [a, b] of [[0, 1], [0, 2], [1, 2]]) {
       total += weights[i];
       agree += weights[i] * (sc[a] > sc[b] ? 1 : sc[a] === sc[b] ? 0.5 : 0);

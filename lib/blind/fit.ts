@@ -26,62 +26,123 @@ export interface FitResult {
   votesUsed: number;
 }
 
+/**
+ * One set of votes judged on one set of cards (e.g. one week's). `ids[i]` has feature row `features[i]`.
+ * With `offsets: false` the group informs only the stat weights, not the per-team offsets: the season-long
+ * crowd uses this for past weeks, whose cards no longer describe the teams.
+ */
+export interface VoteGroup {
+  ids: readonly number[];
+  features: readonly (readonly number[])[];
+  votes: readonly Vote[];
+  /** Per-vote weight (aligned with `votes`, default 1). */
+  voteWeights?: readonly number[];
+  offsets?: boolean;
+}
+
+export interface GroupFitResult {
+  weights: number[];
+  /** Per-team offsets, for every team in a group with offsets (0 for teams with no offset votes). */
+  offsets: Map<number, number>;
+  votesUsed: number;
+}
+
 export function fitPlackettLuce(
   votes: readonly Vote[],
   ids: readonly number[],
   features: readonly (readonly number[])[],
   opts: FitOptions = {},
 ): FitResult {
+  const g = fitPlackettLuceGroups([{ ids, features, votes, voteWeights: opts.voteWeights, offsets: true }], opts);
+  return rankWith(ids, features, g);
+}
+
+/** Scores and ranks `ids` (with feature rows `features`) under a fit's stat weights and team offsets. */
+export function rankWith(ids: readonly number[], features: readonly (readonly number[])[], g: GroupFitResult): FitResult {
+  const s = features.map((x, i) => x.reduce((a, xv, k) => a + xv * g.weights[k], 0) + (g.offsets.get(ids[i]) ?? 0));
+  const scores = new Map(ids.map((id, i) => [id, s[i]]));
+  const order = [...ids].sort((a, b) => scores.get(b)! - scores.get(a)! || a - b);
+  return { scores, ranks: new Map(order.map((id, i) => [id, i + 1])), weights: g.weights, votesUsed: g.votesUsed };
+}
+
+/** Joint fit over several vote groups: shared stat weights, per-team offsets from the groups that allow them. */
+export function fitPlackettLuceGroups(groups: readonly VoteGroup[], opts: Omit<FitOptions, "voteWeights"> = {}): GroupFitResult {
   const lambdaW = opts.lambdaW ?? 0.1;
   const lambdaU = opts.lambdaU ?? 2;
   const maxIter = opts.maxIter ?? 400;
-  const n = ids.length;
-  const F = n ? features[0].length : 0;
-  const index = new Map(ids.map((id, i) => [id, i]));
-  const used: [number, number, number][] = [];
-  const weight: number[] = [];
-  votes.forEach((v, k) => {
-    const idx = v.map((id) => index.get(id)) as (number | undefined)[];
-    if (idx.every((i) => i !== undefined) && new Set(idx).size === 3) {
-      used.push(idx as [number, number, number]);
-      weight.push(opts.voteWeights?.[k] ?? 1);
-    }
-  });
+  const F = groups.find((g) => g.features.length)?.features[0].length ?? 0;
 
-  const strengths = (w: number[], u: number[]) => features.map((x, i) => x.reduce((a, xv, k) => a + xv * w[k], 0) + u[i]);
+  // Offsets live on the union of teams in offset groups.
+  const teamIndex = new Map<number, number>();
+  for (const g of groups) if (g.offsets ?? true) for (const id of g.ids) if (!teamIndex.has(id)) teamIndex.set(id, teamIndex.size);
+  const n = teamIndex.size;
 
-  /** Returns the objective and its gradient with respect to the strengths. */
-  function evaluate(w: number[], u: number[]): { f: number; gw: number[]; gu: number[] } {
-    const s = strengths(w, u);
-    const gs = new Array<number>(n).fill(0);
-    let ll = 0;
-    used.forEach(([a, b, c], v) => {
-      const wv = weight[v];
-      for (const set of [[a, b, c], [b, c]]) {
-        const m = Math.max(...set.map((i) => s[i]));
-        const exps = set.map((i) => Math.exp(s[i] - m));
-        const z = exps.reduce((p, q) => p + q, 0);
-        ll += wv * (s[set[0]] - m - Math.log(z));
-        gs[set[0]] += wv;
-        set.forEach((i, k) => (gs[i] -= (wv * exps[k]) / z));
+  interface Prepared {
+    features: readonly (readonly number[])[];
+    /** Offset index per row, or -1 when the group has no offsets. */
+    team: number[];
+    used: [number, number, number][];
+    weight: number[];
+  }
+  let votesUsed = 0;
+  const prepared: Prepared[] = groups.map((g) => {
+    const index = new Map(g.ids.map((id, i) => [id, i]));
+    const used: [number, number, number][] = [];
+    const weight: number[] = [];
+    g.votes.forEach((v, k) => {
+      const idx = v.map((id) => index.get(id)) as (number | undefined)[];
+      if (idx.every((i) => i !== undefined) && new Set(idx).size === 3) {
+        used.push(idx as [number, number, number]);
+        weight.push(g.voteWeights?.[k] ?? 1);
       }
     });
+    votesUsed += used.length;
+    const team = g.ids.map((id) => ((g.offsets ?? true) ? teamIndex.get(id)! : -1));
+    return { features: g.features, team, used, weight };
+  });
+
+  /** Returns the objective and its gradients. */
+  function evaluate(w: number[], u: number[]): { f: number; gw: number[]; gu: number[] } {
+    let ll = 0;
     const gw = new Array<number>(F).fill(0);
-    for (let i = 0; i < n; i++) for (let k = 0; k < F; k++) gw[k] += features[i][k] * gs[i];
+    const gu = new Array<number>(n).fill(0);
+    for (const p of prepared) {
+      if (p.used.length === 0) continue;
+      const s = p.features.map((x, i) => x.reduce((a, xv, k) => a + xv * w[k], 0) + (p.team[i] >= 0 ? u[p.team[i]] : 0));
+      const gs = new Array<number>(s.length).fill(0);
+      p.used.forEach(([a, b, c], v) => {
+        const wv = p.weight[v];
+        for (const set of [[a, b, c], [b, c]]) {
+          const m = Math.max(...set.map((i) => s[i]));
+          const exps = set.map((i) => Math.exp(s[i] - m));
+          const z = exps.reduce((q, r) => q + r, 0);
+          ll += wv * (s[set[0]] - m - Math.log(z));
+          gs[set[0]] += wv;
+          set.forEach((i, k) => (gs[i] -= (wv * exps[k]) / z));
+        }
+      });
+      for (let i = 0; i < s.length; i++) {
+        if (gs[i] === 0) continue;
+        for (let k = 0; k < F; k++) gw[k] += p.features[i][k] * gs[i];
+        if (p.team[i] >= 0) gu[p.team[i]] += gs[i];
+      }
+    }
     let pen = 0;
     for (let k = 0; k < F; k++) {
       const d = w[k] - (opts.wPrior?.[k] ?? 0);
       gw[k] -= lambdaW * d;
       pen += lambdaW * d * d;
     }
-    const gu = gs.map((g, i) => g - lambdaU * u[i]);
-    for (let i = 0; i < n; i++) pen += lambdaU * u[i] * u[i];
+    for (let i = 0; i < n; i++) {
+      gu[i] -= lambdaU * u[i];
+      pen += lambdaU * u[i] * u[i];
+    }
     return { f: ll - pen / 2, gw, gu };
   }
 
   let w = Array.from({ length: F }, (_, k) => opts.wPrior?.[k] ?? 0);
   let u = new Array<number>(n).fill(0);
-  if (used.length > 0) {
+  if (votesUsed > 0) {
     let cur = evaluate(w, u);
     let step = 0.1;
     for (let iter = 0; iter < maxIter; iter++) {
@@ -105,9 +166,5 @@ export function fitPlackettLuce(
       if (!accepted) break;
     }
   }
-
-  const s = strengths(w, u);
-  const scores = new Map(ids.map((id, i) => [id, s[i]]));
-  const order = [...ids].sort((a, b) => scores.get(b)! - scores.get(a)! || a - b);
-  return { scores, ranks: new Map(order.map((id, i) => [id, i + 1])), weights: w, votesUsed: used.length };
+  return { weights: w, offsets: new Map([...teamIndex].map(([id, i]) => [id, u[i]])), votesUsed };
 }

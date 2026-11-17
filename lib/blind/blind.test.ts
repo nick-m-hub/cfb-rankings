@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { matchBlend, type BlendZ } from "./blend";
 import { crowdWeekStart } from "./constants";
 import { buildFeatures, FEATURE_NAMES } from "./features";
-import { fitPlackettLuce } from "./fit";
+import { fitPlackettLuce, fitPlackettLuceGroups, rankWith } from "./fit";
 import { isG6 } from "../g6";
 import { g6Records } from "./g6";
 import { fitVoter, sessionWeights } from "./model";
@@ -245,6 +245,47 @@ test("crowd: down-weighted spam can't flip a pairwise ranking", () => {
   const capped = fitPlackettLuce(votes, ids, features, { voteWeights: sessionWeights(sessions, 10) });
   assert.ok(plain.ranks.get(2)! < plain.ranks.get(1)!, "unweighted, the spammer wins");
   assert.ok(capped.ranks.get(1)! < capped.ranks.get(2)!, "capped, the crowd wins");
+});
+
+test("season crowd: past weeks' votes teach the stat weights, not team offsets", () => {
+  // Week 1: the crowd consistently prefers the team with more of stat 0. Week 2: no votes yet.
+  const ids = [1, 2, 3, 4, 5, 6];
+  const week1 = ids.map((id) => [id, 0]);
+  const week1Votes: Vote[] = Array.from({ length: 60 }, (_, i) => {
+    const t = [1 + (i % 4), 2 + (i % 4), 3 + (i % 4)];
+    return [t[2], t[1], t[0]];
+  });
+  // By week 2 the stats have flipped: team 1 now leads stat 0.
+  const week2 = ids.map((id) => [7 - id, 0]);
+  const g = fitPlackettLuceGroups([
+    { ids, features: week1, votes: week1Votes, offsets: false },
+    { ids, features: week2, votes: [], offsets: true },
+  ]);
+  assert.ok(g.weights[0] > 0.5, "learned to value stat 0");
+  assert.ok([...g.offsets.values()].every((u) => u === 0), "no offsets from past weeks");
+  const r = rankWith(ids, week2, g).ranks;
+  assert.equal(r.get(1), 1, "applied to this week's stats, team 1 ranks first");
+  assert.equal(r.get(6), 6);
+});
+
+test("fitPlackettLuce matches a single offset group", () => {
+  const ids = [1, 2, 3, 4];
+  const features = ids.map((id) => [id % 2, id / 4]);
+  const votes: Vote[] = [[1, 2, 3], [4, 3, 2], [2, 4, 1], [3, 1, 4]];
+  const a = fitPlackettLuce(votes, ids, features);
+  const b = rankWith(ids, features, fitPlackettLuceGroups([{ ids, features, votes }]));
+  assert.deepEqual([...a.scores], [...b.scores]);
+});
+
+test("matchBlend: per-vote z-scores score each vote against its own week", () => {
+  // The same three teams, but their z-scores swap between weeks; each week's votes follow that week's best-team z.
+  const wk1 = new Map<number, BlendZ>([[1, { zPred: 2, zResume: 0 }], [2, { zPred: 1, zResume: 0 }], [3, { zPred: 0, zResume: 0 }]]);
+  const wk2 = new Map<number, BlendZ>([[1, { zPred: 0, zResume: 0 }], [2, { zPred: 1, zResume: 0 }], [3, { zPred: 2, zResume: 0 }]]);
+  const votes: Vote[] = [...Array(30).fill([1, 2, 3]), ...Array(30).fill([3, 2, 1])];
+  const voteZ = [...Array(30).fill(wk1), ...Array(30).fill(wk2)];
+  const m = matchBlend(votes, new Map(), { voteZ })!;
+  assert.equal(m.blend, 100);
+  assert.equal(m.agreement, 1);
 });
 
 test("features: quadrant columns reward Q1 wins and penalize Q3/Q4 losses", () => {

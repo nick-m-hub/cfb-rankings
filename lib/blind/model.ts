@@ -2,7 +2,7 @@
 
 import { CROWD_SESSION_CAP, DEFAULT_STAT_WEIGHT, DEFAULT_WEIGHT_STRENGTH } from "./constants";
 import type { FeatureMatrix } from "./features";
-import { fitPlackettLuce, type FitResult } from "./fit";
+import { fitPlackettLuce, fitPlackettLuceGroups, type FitResult, type GroupFitResult, type VoteGroup } from "./fit";
 import type { Vote } from "./types";
 
 /** What a typical voter is assumed to value before their own rounds say otherwise. */
@@ -11,6 +11,12 @@ export const defaultWeights = (featureCount: number): number[] => new Array<numb
 export function fitVoter(votes: readonly Vote[], f: FeatureMatrix, voteWeights?: readonly number[]): FitResult {
   const count = f.rows[0]?.length ?? 0;
   return fitPlackettLuce(votes, f.ids, f.rows, { wPrior: defaultWeights(count), lambdaW: DEFAULT_WEIGHT_STRENGTH, voteWeights });
+}
+
+/** The season-long crowd fit: same default-weight prior as a single voter, over every week's votes. */
+export function fitCrowd(groups: readonly VoteGroup[]): GroupFitResult {
+  const count = groups.find((g) => g.features.length)?.features[0].length ?? 0;
+  return fitPlackettLuceGroups(groups, { wPrior: defaultWeights(count), lambdaW: DEFAULT_WEIGHT_STRENGTH });
 }
 
 /**

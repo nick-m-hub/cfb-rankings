@@ -121,8 +121,13 @@ export default async function Methodology() {
         team. Until your own rounds say otherwise it assumes you like every stat a little, and it picks the next
         cards to be the ones that tell it the most about what you value. That is why about 15 rounds give a usable
         ranking, and more rounds sharpen it. Everyone&apos;s votes also feed a crowd
-        ranking that resets every Monday. To keep one visitor from outvoting everyone, each browser session counts as
-        at most 40 votes: beyond that its votes are scaled down, and the 200-vote threshold counts votes the same way. Our own model ranks are deliberately kept off the cards, so the ranking
+        ranking that builds over the whole season. Each vote is judged against the cards as they were the week it was
+        cast, and every vote refines how much the crowd weights each stat; those weights are then applied to this
+        week&apos;s stats, so teams move as their seasons change while the crowd&apos;s sense of what matters keeps
+        sharpening. The small per-team adjustments come only from votes on this week&apos;s cards, since an old card no
+        longer describes the team. To keep one visitor from outvoting everyone, each browser session counts as
+        at most 40 votes per week of cards: beyond that its votes are scaled down, and the 200-vote threshold (for the
+        season) counts votes the same way. Our own model ranks are deliberately kept off the cards, so the ranking
         reflects your judgment rather than ours.
       </p>
       <p>
@@ -138,7 +143,7 @@ export default async function Methodology() {
         settings your rounds can&apos;t tell apart from it (about 95% confidence). It uses your raw rounds, not your
         fitted ranking, because the fitted ranking leans on default stat weights early on. The two models agree on most
         teams, so the range is wide after 15 rounds and narrows as you play. The crowd&apos;s blend is the same
-        calculation over this week&apos;s votes, with each session capped as for the crowd ranking.
+        calculation over the season&apos;s votes, each scored against its own week&apos;s models, with each session capped as for the crowd ranking.
       </p>
       <p>
         Quadrants group opponents by our best-team rating, and the bands widen toward the bottom, like college

@@ -1,4 +1,4 @@
-// Shared constants and the Monday-reset helper for the blind ranking feature.
+// Shared constants and the calendar-week helper for the blind ranking feature.
 
 /** Rounds a visitor must play before their personal ranking unlocks. */
 export const MIN_PERSONAL_ROUNDS = 15;
@@ -15,7 +15,7 @@ export const DEFAULT_STAT_WEIGHT = 0.6;
 export const DEFAULT_WEIGHT_STRENGTH = 1;
 /** Most votes one session counts as in the crowd ranking (its votes are down-weighted beyond this). */
 export const CROWD_SESSION_CAP = TARGET_PERSONAL_ROUNDS;
-/** Votes needed in the current crowd week before a crowd ranking is shown. */
+/** Capped votes needed in the season before the crowd ranking is shown. */
 export const MIN_CROWD_VOTES = 200;
 
 /** Server-side abuse limits, per anonymous session. */
@@ -28,8 +28,8 @@ export const CROWD_TAG = "blind-crowd";
 const WEEKDAY_INDEX: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
 
 /**
- * The crowd ranking resets every Monday 00:00 America/New_York. Returns the Monday (as YYYY-MM-DD,
- * Eastern calendar date) of the crowd week containing `now`; votes store it as `crowd_week`.
+ * Calendar week a vote was cast in, stored as `crowd_week` (the crowd ranking reset on it until 2026-11-17; it now
+ * spans the season). Returns the Monday 00:00 America/New_York that starts the week containing `now`, as YYYY-MM-DD.
  */
 export function crowdWeekStart(now: Date): string {
   const parts = new Intl.DateTimeFormat("en-US", {

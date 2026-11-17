@@ -9,7 +9,8 @@ import { buildFeatures } from "./features";
 import { isG6 } from "../g6";
 import { g6Records } from "./g6";
 import { matchBlend, type BlendMatch } from "./blend";
-import { fitVoter, sessionWeights } from "./model";
+import { fitCrowd, sessionWeights } from "./model";
+import { rankWith, type VoteGroup } from "./fit";
 import { CROWD_TAG, MIN_CROWD_VOTES } from "./constants";
 import { meanOrNull, rankBy, weightedMean } from "./stats";
 import type { GameSummary } from "../models/run";
@@ -101,6 +102,15 @@ export async function getBlindData(): Promise<BlindData | null> {
   cacheTag(RANKINGS_TAG);
   const latest = await getLatestWeek();
   if (!latest) return null;
+  return getBlindWeek(latest.season, latest.week);
+}
+
+/** Cards and reveal info as of one stored week (the season-long crowd scores each vote against its week). */
+export async function getBlindWeek(season: number, week: number): Promise<BlindData | null> {
+  "use cache";
+  cacheLife("max");
+  cacheTag(RANKINGS_TAG);
+  const latest = { season, week };
   const [data, games] = await Promise.all([
     getWeekData(latest.season, latest.week),
     completedGames(latest.season, latest.week),
@@ -207,45 +217,80 @@ export async function getBlindData(): Promise<BlindData | null> {
 }
 
 export interface CrowdRanking {
-  crowdWeek: string;
+  /** Votes cast this season (before the per-session cap). */
   votes: number;
-  /** Team id -> crowd rank (1 = best); null until MIN_CROWD_VOTES votes have been cast this week. */
+  /** Team id -> crowd rank (1 = best); null until MIN_CROWD_VOTES capped votes have been cast this season. */
   ranks: Record<number, number> | null;
-  /** Where this week's crowd votes sit on the rankings slider (session-capped like the ranking); null with `ranks`. */
+  /** Where the season's crowd votes sit on the rankings slider (session-capped like the ranking); null with `ranks`. */
   blend: Pick<BlendMatch, "blend" | "low" | "high"> | null;
 }
 
-/** Crowd ranking from this crowd week's votes. `crowdWeek` is an argument so the cache key rolls over on Monday. */
-export async function getCrowdRanking(crowdWeek: string, season: number): Promise<CrowdRanking> {
+/**
+ * Season-long crowd ranking. Every vote this season refines what the crowd values (the stat weights), each
+ * judged against the cards of the week it was cast in, and the current week's cards are ranked with those
+ * weights. Team-specific offsets come only from votes on the current week's cards: a past week's card no longer
+ * describes the team. Each session counts as at most CROWD_SESSION_CAP votes per card week.
+ */
+export async function getCrowdRanking(season: number, week: number): Promise<CrowdRanking> {
   "use cache";
   cacheLife("minutes");
   cacheTag(CROWD_TAG);
   const db = createAdminDb();
-  const votes: Vote[] = [];
-  const sessions: string[] = [];
+  const byWeek = new Map<number, { votes: Vote[]; sessions: string[] }>();
+  let total = 0;
   for (let from = 0; ; from += 1000) {
     const { data, error } = await db
       .from("blind_votes")
-      .select("first, second, third, session_id")
-      .eq("crowd_week", crowdWeek)
+      .select("first, second, third, session_id, week")
       .eq("season", season)
+      .lte("week", week)
       .order("id")
       .range(from, from + 999);
     if (error) throw new Error(`blind_votes: ${error.message}`);
     for (const r of data) {
-      votes.push([r.first, r.second, r.third]);
-      sessions.push(r.session_id);
+      const g = byWeek.get(r.week) ?? { votes: [], sessions: [] };
+      g.votes.push([r.first, r.second, r.third]);
+      g.sessions.push(r.session_id);
+      byWeek.set(r.week, g);
+      total++;
     }
     if (data.length < 1000) break;
   }
+  const none = { votes: total, ranks: null, blend: null };
   // The threshold counts capped votes, so a single heavy voter can't unlock the crowd ranking alone.
-  const weights = sessionWeights(sessions);
-  if (weights.reduce((a, b) => a + b, 0) < MIN_CROWD_VOTES) return { crowdWeek, votes: votes.length, ranks: null, blend: null };
-  const blind = await getBlindData();
-  if (!blind) return { crowdWeek, votes: votes.length, ranks: null, blend: null };
-  const f = buildFeatures(blind.cards);
-  const fit = fitVoter(votes, f, weights);
-  const m = matchBlend(votes, new Map(blind.info.map((t) => [t.id, t])), { voteWeights: weights });
+  const weightsByWeek = new Map([...byWeek].map(([w, g]) => [w, sessionWeights(g.sessions)]));
+  const capped = [...weightsByWeek.values()].flat().reduce((a, b) => a + b, 0);
+  if (capped < MIN_CROWD_VOTES) return none;
+
+  const weeks = [...new Set([...byWeek.keys(), week])].sort((a, b) => a - b);
+  const cardWeeks = new Map(
+    (await Promise.all(weeks.map(async (w) => [w, await getBlindWeek(season, w)] as const))).filter(
+      (e): e is readonly [number, BlindData] => e[1] !== null,
+    ),
+  );
+  const current = cardWeeks.get(week);
+  if (!current) return none;
+
+  const groups: VoteGroup[] = [];
+  const votes: Vote[] = [];
+  const voteWeights: number[] = [];
+  const voteZ: Map<number, BlindTeamInfo>[] = [];
+  for (const [w, g] of byWeek) {
+    const cards = cardWeeks.get(w);
+    if (!cards) continue;
+    const f = buildFeatures(cards.cards);
+    groups.push({ ids: f.ids, features: f.rows, votes: g.votes, voteWeights: weightsByWeek.get(w), offsets: w === week });
+    const z = new Map(cards.info.map((t) => [t.id, t]));
+    g.votes.forEach((v, i) => {
+      votes.push(v);
+      voteWeights.push(weightsByWeek.get(w)![i]);
+      voteZ.push(z);
+    });
+  }
+  const cur = buildFeatures(current.cards);
+  const fit = fitCrowd(groups);
+  const ranks = rankWith(cur.ids, cur.rows, fit).ranks;
+  const m = matchBlend(votes, new Map(), { voteWeights, voteZ });
   const blend = m && { blend: m.blend, low: m.low, high: m.high };
-  return { crowdWeek, votes: votes.length, ranks: Object.fromEntries(fit.ranks), blend };
+  return { votes: total, ranks: Object.fromEntries(ranks), blend };
 }
