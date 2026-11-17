@@ -81,3 +81,23 @@ export function rankTeams(teams: readonly TeamInput[], blend: number): RankedTea
     })
     .sort((a, b) => a.rank - b.rank);
 }
+
+/** Group of Six conferences as stored in `team_seasons.conference`. The Pac-12 counts only from 2026, the rebuilt league. */
+const G6_CONFERENCES = new Set(["American Athletic", "Conference USA", "Mid-American", "Mountain West", "Sun Belt"]);
+export const G6_PAC12_FROM = 2026;
+
+export function isG6(conference: string | null, season: number): boolean {
+  if (conference === null) return false;
+  return G6_CONFERENCES.has(conference) || (conference === "Pac-12" && season >= G6_PAC12_FROM);
+}
+
+export interface FilteredTeam extends RankedTeam {
+  /** Rank among all FBS teams at this blend; equals `rank` when unfiltered. */
+  fbsRank: number;
+}
+
+/** Ranks the G6 teams among themselves (rank, deserving, best and change all renumbered) and keeps each one's FBS rank. */
+export function rankG6(teams: readonly TeamInput[], blend: number, season: number): FilteredTeam[] {
+  const fbs = new Map(rankTeams(teams, blend).map((t) => [t.id, t.rank]));
+  return rankTeams(teams.filter((t) => isG6(t.conference, season)), blend).map((t) => ({ ...t, fbsRank: fbs.get(t.id)! }));
+}

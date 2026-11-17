@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseBlend, rankTeams, type TeamInput } from "./rank";
+import { isG6, parseBlend, rankG6, rankTeams, type TeamInput } from "./rank";
 
 const t = (id: number, name: string, zPred: number | null, zResume: number | null, pp = zPred, pr = zResume): TeamInput => ({
   id, name, conference: null, wins: 0, losses: 0, zPred, zResume, prevZPred: pp, prevZResume: pr,
@@ -32,4 +32,18 @@ test("parseBlend clamps and falls back", () => {
   assert.equal(parseBlend("-5", 50), 0);
   assert.equal(parseBlend("abc", 50), 50);
   assert.equal(parseBlend(null, 50), 50);
+});
+
+test("isG6: five conferences always, Pac-12 only from 2026", () => {
+  assert.equal(isG6("Sun Belt", 2015), true);
+  assert.equal(isG6("Pac-12", 2026), true);
+  assert.equal(isG6("Pac-12", 2025), false);
+  assert.equal(isG6("SEC", 2026), false);
+  assert.equal(isG6(null, 2026), false);
+});
+
+test("rankG6 renumbers within G6 and keeps FBS rank", () => {
+  const g = (id: number, name: string, conf: string, z: number): TeamInput => ({ ...t(id, name, z, z), conference: conf });
+  const r = rankG6([g(1, "Big", "SEC", 3), g(2, "Mid", "Sun Belt", 2), g(3, "Low", "Mid-American", 1)], 50, 2026);
+  assert.deepEqual(r.map((x) => [x.name, x.rank, x.fbsRank, x.predRank]), [["Mid", 1, 2, 1], ["Low", 2, 3, 2]]);
 });

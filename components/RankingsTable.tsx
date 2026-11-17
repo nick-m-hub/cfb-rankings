@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { DEFAULT_BLEND } from "@/lib/site";
 import type { SeasonWeeks } from "@/lib/rankings/data";
-import { parseBlend, rankTeams, type TeamInput } from "@/lib/rankings/rank";
+import { parseBlend, rankG6, rankTeams, type FilteredTeam, type TeamInput } from "@/lib/rankings/rank";
 
 interface Props {
   season: number;
@@ -19,8 +19,12 @@ export function RankingsTable({ season, week, teams, seasons }: Props) {
   const initial = parseBlend(searchParams.get("blend"), DEFAULT_BLEND);
   const [blend, setBlend] = useState(initial);
   const [open, setOpen] = useState<number | null>(null);
+  const [g6, setG6] = useState(searchParams.get("g6") === "1");
 
-  const rows = useMemo(() => rankTeams(teams, blend), [teams, blend]);
+  const rows: FilteredTeam[] = useMemo(
+    () => (g6 ? rankG6(teams, blend, season) : rankTeams(teams, blend).map((t) => ({ ...t, fbsRank: t.rank }))),
+    [teams, blend, g6, season],
+  );
   const range = seasons.find((s) => s.season === season) ?? { season, minWeek: week, maxWeek: week };
 
   function onBlend(v: number) {
@@ -29,8 +33,15 @@ export function RankingsTable({ season, week, teams, seasons }: Props) {
     url.searchParams.set("blend", String(v));
     window.history.replaceState(null, "", url);
   }
+  function onG6(on: boolean) {
+    setG6(on);
+    const url = new URL(window.location.href);
+    if (on) url.searchParams.set("g6", "1");
+    else url.searchParams.delete("g6");
+    window.history.replaceState(null, "", url);
+  }
   function go(s: number, w: number) {
-    router.push(`/rankings/${s}/${w}?blend=${blend}`);
+    router.push(`/rankings/${s}/${w}?blend=${blend}${g6 ? "&g6=1" : ""}`);
   }
 
   return (
@@ -64,6 +75,10 @@ export function RankingsTable({ season, week, teams, seasons }: Props) {
             ))}
           </select>
         </label>
+        <label className="flex items-center gap-2 text-sm" title="AAC, C-USA, MAC, Mountain West, Sun Belt, and the Pac-12 from 2026">
+          <input type="checkbox" checked={g6} onChange={(e) => onG6(e.target.checked)} />
+          <span>G6 only</span>
+        </label>
       </div>
 
       <div className="mb-6 rounded border border-current/20 p-3">
@@ -93,6 +108,7 @@ export function RankingsTable({ season, week, teams, seasons }: Props) {
         <thead>
           <tr className="border-b border-current/20">
             <th className="py-2 pr-2">#</th>
+            {g6 && <th className="py-2 pr-2 text-xs font-normal opacity-70">FBS</th>}
             <th className="py-2 pr-2">Team</th>
             <th className="hidden py-2 pr-2 sm:table-cell">Conf</th>
             <th className="py-2 pr-2">Record</th>
@@ -104,7 +120,7 @@ export function RankingsTable({ season, week, teams, seasons }: Props) {
         </thead>
         <tbody>
           {rows.map((t) => (
-            <RowGroup key={t.id} t={t} expanded={open === t.id} onToggle={() => setOpen(open === t.id ? null : t.id)} />
+            <RowGroup key={t.id} t={t} g6={g6} expanded={open === t.id} onToggle={() => setOpen(open === t.id ? null : t.id)} />
           ))}
         </tbody>
       </table>
@@ -127,13 +143,14 @@ function change(c: number | null) {
 const signed = (v: number, d = 1) => `${v >= 0 ? "+" : ""}${v.toFixed(d)}`;
 const site = (s: string) => (s === "home" ? "vs" : s === "away" ? "at" : "vs (N)");
 
-type Row = ReturnType<typeof rankTeams>[number];
+type Row = FilteredTeam;
 
-function RowGroup({ t, expanded, onToggle }: { t: Row; expanded: boolean; onToggle: () => void }) {
+function RowGroup({ t, g6, expanded, onToggle }: { t: Row; g6: boolean; expanded: boolean; onToggle: () => void }) {
   return (
     <>
       <tr className="cursor-pointer border-b border-current/10 hover:bg-current/5" onClick={onToggle} aria-expanded={expanded}>
         <td className="py-2 pr-2 tabular-nums">{t.rank}</td>
+        {g6 && <td className="py-2 pr-2 text-xs tabular-nums opacity-70">{t.fbsRank}</td>}
         <td className="py-2 pr-2 font-medium">{t.name}</td>
         <td className="hidden py-2 pr-2 sm:table-cell">{t.conference ?? ""}</td>
         <td className="py-2 pr-2 tabular-nums">{t.wins}-{t.losses}</td>
@@ -144,7 +161,7 @@ function RowGroup({ t, expanded, onToggle }: { t: Row; expanded: boolean; onTogg
       </tr>
       {expanded && (
         <tr className="border-b border-current/10">
-          <td colSpan={8} className="pb-3 pt-1">
+          <td colSpan={g6 ? 9 : 8} className="pb-3 pt-1">
             <Details t={t} />
           </td>
         </tr>
