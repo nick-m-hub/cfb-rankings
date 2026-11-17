@@ -250,7 +250,8 @@ function BlindGame({
       </Card>
 
       {triple ? (
-        <div className="grid gap-3 sm:grid-cols-3">
+        // Phones: the three cards sit side by side in a row that scrolls sideways (two fit, the third peeks).
+        <div className="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-3 sm:gap-3 sm:overflow-visible sm:px-0 sm:pb-0 [&::-webkit-scrollbar]:hidden">
           {triple.map((id, i) => (
             <CardView
               key={id}
@@ -329,7 +330,7 @@ function StatBar({ label, value, frac, centered = false }: { label: string; valu
     : { left: "0%", width: `${Math.max(0, frac) * 100}%` };
   return (
     <div>
-      <div className="flex justify-between tabular-nums">
+      <div className="flex justify-between gap-2 leading-tight tabular-nums">
         <span className="text-muted">{label}</span>
         <span className="font-semibold">{value}</span>
       </div>
@@ -363,7 +364,7 @@ function CardView({
     <button
       onClick={onPick}
       aria-pressed={chosen}
-      className={`relative flex flex-col justify-start rounded-xl border bg-surface p-4 text-left text-sm shadow-sm transition ${chosen ? "border-accent ring-2 ring-accent/25" : "border-line hover:-translate-y-0.5 hover:border-muted hover:shadow-md"}`}
+      className={`relative flex w-[9.75rem] shrink-0 snap-start scroll-ml-4 flex-col justify-start rounded-xl border bg-surface p-3 text-left text-xs shadow-sm transition sm:w-auto sm:p-4 sm:text-sm ${chosen ? "border-accent ring-2 ring-accent/25" : "border-line hover:-translate-y-0.5 hover:border-muted hover:shadow-md"}`}
     >
       <div className="mb-2 flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted">Team {label}</span>
@@ -371,13 +372,13 @@ function CardView({
       </div>
       <div className="mb-3 flex items-end justify-between gap-3">
         <div>
-          <p className="font-display text-3xl font-semibold leading-none tabular-nums">
+          <p className="font-display text-2xl font-semibold leading-none tabular-nums sm:text-3xl">
             {g6 && card.g6Record ? `${card.g6Record.w}-${card.g6Record.l}` : `${card.wins}-${card.losses}`}
           </p>
           <p className="mt-1 text-xs text-muted">{g6 ? "Record vs G6" : "Record"}</p>
         </div>
       </div>
-      <div className="space-y-2.5">
+      <div className="space-y-2 sm:space-y-2.5">
         {(() => {
           // G6 mode: games against G6 teams only, like the record.
           const margin = g6 ? card.g6Margin : card.margin;
@@ -418,8 +419,8 @@ function CardView({
           className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-xl p-3 text-center"
           style={{ background: "color-mix(in srgb, var(--surface) 94%, transparent)" }}
         >
-          {revealed.cfbdId && <TeamLogo cfbdId={revealed.cfbdId} name={revealed.name} size={72} />}
-          <span className="font-display text-2xl font-semibold">{revealed.name}</span>
+          {revealed.cfbdId && <TeamLogo cfbdId={revealed.cfbdId} name={revealed.name} size={56} />}
+          <span className="font-display text-xl font-semibold leading-tight sm:text-2xl">{revealed.name}</span>
           {chosen && <span className="text-xs font-semibold text-accent">Your {ORDINAL[place]}</span>}
         </span>
       )}
@@ -434,12 +435,12 @@ const QUADRANT_HINT =
 function Quadrants({ quadrants }: { quadrants: BlindCard["quadrants"] }) {
   return (
     <div className="mt-3" title={QUADRANT_HINT}>
-      <p className="mb-1 text-xs text-muted">Record vs. opponent quadrant</p>
+      <p className="mb-1 text-xs leading-tight text-muted">Record vs. opponent quadrant</p>
       <div className="grid grid-cols-4 gap-1 text-center">
         {[0, 1, 2, 3].map((q) => (
-          <div key={q} className="rounded-md bg-bg px-1 py-1">
+          <div key={q} className="rounded-md bg-bg px-0.5 py-1 sm:px-1">
             <p className="text-[10px] font-semibold uppercase text-muted">Q{q + 1}</p>
-            <p className="text-sm font-semibold tabular-nums">{quadrants ? `${quadrants[q].w}-${quadrants[q].l}` : "–"}</p>
+            <p className="text-xs font-semibold tabular-nums sm:text-sm">{quadrants ? `${quadrants[q].w}-${quadrants[q].l}` : "–"}</p>
           </div>
         ))}
       </div>
