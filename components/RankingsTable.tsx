@@ -33,11 +33,21 @@ export function RankingsTable({ season, week, teams, seasons }: Props) {
   const [dialogTeam, setDialogTeam] = useState<Row | null>(null);
   const range = seasons.find((s) => s.season === season) ?? { season, minWeek: week, maxWeek: week };
 
+  // Write the blend to the URL only once the slider settles: Safari throws (and the page crashes) after
+  // 100 history.replaceState calls in 10 seconds, which a quick back-and-forth drag exceeds.
+  const blendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (blendTimer.current) clearTimeout(blendTimer.current);
+  }, []);
   function onBlend(v: number) {
     setBlend(v);
-    const url = new URL(window.location.href);
-    url.searchParams.set("blend", String(v));
-    window.history.replaceState(null, "", url);
+    if (blendTimer.current) clearTimeout(blendTimer.current);
+    blendTimer.current = setTimeout(() => {
+      blendTimer.current = null;
+      const url = new URL(window.location.href);
+      url.searchParams.set("blend", String(v));
+      window.history.replaceState(null, "", url);
+    }, 400);
   }
   function onG6(on: boolean) {
     setG6(on);
