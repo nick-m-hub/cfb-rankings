@@ -1,12 +1,13 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_BLEND } from "@/lib/site";
+import { ShareTop25 } from "./ShareTop25";
 import { TeamLogo } from "./TeamLogo";
 import { Card, Select, Toggle } from "./ui";
 import type { SeasonWeeks } from "@/lib/rankings/data";
-import { parseBlend, rankG6, rankTeams, type FilteredTeam, type TeamInput } from "@/lib/rankings/rank";
+import { blendLabel, parseBlend, rankView, type FilteredTeam, type TeamInput } from "@/lib/rankings/rank";
 
 interface Props {
   season: number;
@@ -24,9 +25,12 @@ export function RankingsTable({ season, week, teams, seasons }: Props) {
   const [g6, setG6] = useState(searchParams.get("g6") === "1");
 
   const rows: FilteredTeam[] = useMemo(
-    () => (g6 ? rankG6(teams, blend, season) : rankTeams(teams, blend).map((t) => ({ ...t, fbsRank: t.rank }))),
+    () => rankView(teams, blend, season, g6),
     [teams, blend, g6, season],
   );
+  const top = rows.slice(0, TOP);
+  const rest = rows.slice(TOP);
+  const [dialogTeam, setDialogTeam] = useState<Row | null>(null);
   const range = seasons.find((s) => s.season === season) ?? { season, minWeek: week, maxWeek: week };
 
   function onBlend(v: number) {
@@ -104,43 +108,122 @@ export function RankingsTable({ season, week, teams, seasons }: Props) {
         </p>
       </Card>
 
-      <Card className="overflow-hidden">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-line bg-ink/[0.03] text-xs uppercase tracking-wide text-muted">
-            <tr>
-              <th className="w-10 py-2.5 pl-3 pr-1 font-medium sm:w-12 sm:pl-4 sm:pr-2">#</th>
-              {g6 && <th className="py-2.5 pr-2 font-medium normal-case tracking-normal">FBS</th>}
-              <th className="py-2.5 pr-2 font-medium">Team</th>
-              <th className="py-2.5 pr-2 font-medium">Record</th>
-              <th className="py-2.5 pr-3 text-right font-medium sm:pr-2">Score</th>
-              <th className="hidden py-2.5 pr-2 text-right font-medium sm:table-cell">Deserving</th>
-              <th className="hidden py-2.5 pr-2 text-right font-medium sm:table-cell">Best</th>
-              <th className="hidden py-2.5 pr-4 text-right font-medium sm:table-cell">Chg</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((t) => (
-              <RowGroup
-                key={t.id}
-                t={t}
-                g6={g6}
-                cutoff={!g6 && t.rank === 25 && rows.length > 25}
-                expanded={open === t.id}
-                onToggle={() => setOpen(open === t.id ? null : t.id)}
-              />
-            ))}
-          </tbody>
-        </table>
-      </Card>
+      <section aria-labelledby="top25">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          {/* The mix sits in the heading so a screenshot of the grid says which ranking it is. */}
+          <div className="min-w-0">
+            <h2 id="top25" className="font-display text-2xl font-semibold">{g6 ? "G6 top 25" : "Top 25"}</h2>
+            <p className="text-xs font-medium text-accent">
+              {season} Week {week} · {blendLabel(blend)}
+            </p>
+          </div>
+          <ShareTop25 season={season} week={week} blend={blend} g6={g6} />
+        </div>
+        <ol className="grid grid-cols-3 gap-1.5 sm:grid-cols-5 sm:gap-2">
+          {top.map((t) => (
+            <li key={t.id}>
+              <TeamCard t={t} g6={g6} onOpen={() => setDialogTeam(t)} />
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {rest.length > 0 && (
+        <section aria-labelledby="rest" className="mt-10">
+          <h2 id="rest" className="mb-3 font-display text-2xl font-semibold">Everyone else</h2>
+          <Card className="overflow-hidden">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-line bg-ink/[0.03] text-xs uppercase tracking-wide text-muted">
+                <tr>
+                  <th className="w-10 py-2.5 pl-3 pr-1 font-medium sm:w-12 sm:pl-4 sm:pr-2">#</th>
+                  {g6 && <th className="py-2.5 pr-2 font-medium normal-case tracking-normal">FBS</th>}
+                  <th className="py-2.5 pr-2 font-medium">Team</th>
+                  <th className="py-2.5 pr-2 font-medium">Record</th>
+                  <th className="py-2.5 pr-3 text-right font-medium sm:pr-2">Score</th>
+                  <th className="hidden py-2.5 pr-2 text-right font-medium sm:table-cell">Deserving</th>
+                  <th className="hidden py-2.5 pr-2 text-right font-medium sm:table-cell">Best</th>
+                  <th className="hidden py-2.5 pr-4 text-right font-medium sm:table-cell">Chg</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rest.map((t) => (
+                  <RowGroup
+                    key={t.id}
+                    t={t}
+                    g6={g6}
+                    expanded={open === t.id}
+                    onToggle={() => setOpen(open === t.id ? null : t.id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </section>
+      )}
+
+      {dialogTeam && <TeamDialog t={dialogTeam} onClose={() => setDialogTeam(null)} />}
     </div>
   );
 }
 
-function blendLabel(b: number) {
-  if (b === 0) return "100% deserving";
-  if (b === 100) return "100% best team";
-  return `${100 - b}% deserving · ${b}% best`;
+const TOP = 25;
+
+/** Compact on purpose: all 25 fit in one screenshot on a laptop and nearly on a phone. */
+function TeamCard({ t, g6, onOpen }: { t: Row; g6: boolean; onOpen: () => void }) {
+  return (
+    <button
+      onClick={onOpen}
+      aria-haspopup="dialog"
+      aria-label={`${t.rank}. ${t.name}, ${t.wins}-${t.losses}. Details`}
+      className="flex h-full w-full flex-col rounded-lg border border-line border-t-[3px] bg-surface px-2 pb-1 pt-1 text-left sm:pb-1.5 sm:pt-1.5 transition hover:-translate-y-0.5 hover:shadow-md sm:px-2.5"
+      style={t.color ? { borderTopColor: t.color } : undefined}
+    >
+      <span className="flex items-center justify-between gap-1">
+        <span className="font-display text-lg font-semibold leading-none tabular-nums sm:text-xl">{t.rank}</span>
+        <TeamLogo cfbdId={t.cfbdId} name={t.name} color={t.color} size={24} />
+      </span>
+      <span className="mt-0.5 truncate text-xs font-semibold sm:mt-1 sm:text-[13px]">{t.name}</span>
+      <span className="flex items-center justify-between gap-1 text-[11px] tabular-nums text-muted">
+        <span>
+          {t.wins}-{t.losses}
+          {g6 && <span className="hidden sm:inline"> · FBS #{t.fbsRank}</span>}
+        </span>
+        <Change c={t.change} />
+      </span>
+    </button>
+  );
 }
+
+/** Details for a top-25 card, in a modal (a grid has no row to expand into). Esc or a backdrop click closes it. */
+function TeamDialog({ t, onClose }: { t: Row; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (d && !d.open) d.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      onClick={(e) => e.target === ref.current && ref.current?.close()}
+      aria-label={`${t.name} details`}
+      className="m-auto w-[calc(100%-2rem)] max-w-3xl rounded-xl bg-transparent p-0 text-ink backdrop:bg-black/50"
+    >
+      <div className="relative">
+        <button
+          onClick={() => ref.current?.close()}
+          aria-label="Close"
+          className="absolute right-3 top-3 z-10 rounded-md px-2 py-1 text-lg leading-none text-muted hover:bg-ink/[0.06] hover:text-ink"
+        >
+          ×
+        </button>
+        <p className="absolute right-12 top-4 text-xs font-semibold tabular-nums text-muted">#{t.rank}</p>
+        <Details t={t} />
+      </div>
+    </dialog>
+  );
+}
+
 
 function Change({ c }: { c: number | null }) {
   if (c === null) return <span className="text-muted">–</span>;
@@ -156,17 +239,15 @@ type Row = FilteredTeam;
 function RowGroup({
   t,
   g6,
-  cutoff,
   expanded,
   onToggle,
 }: {
   t: Row;
   g6: boolean;
-  cutoff: boolean;
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const border = cutoff && !expanded ? "border-b-2 border-b-muted/40" : "border-b border-line";
+  const border = "border-b border-line";
   return (
     <>
       <tr

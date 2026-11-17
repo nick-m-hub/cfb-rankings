@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseBlend, rankG6, rankTeams, type TeamInput } from "./rank";
+import { blendLabel, parseBlend, rankG6, rankTeams, rankView, type TeamInput } from "./rank";
 
 const t = (id: number, name: string, zPred: number | null, zResume: number | null, pp = zPred, pr = zResume): TeamInput => ({
   id, name, conference: null, wins: 0, losses: 0, zPred, zResume, prevZPred: pp, prevZResume: pr,
@@ -41,4 +41,15 @@ test("rankG6 renumbers within G6 and keeps FBS rank", () => {
   assert.deepEqual(rows(2026), [["Mid", 1, 2, 1], ["Low", 2, 3, 2], ["UConn", 3, 4, 3], ["Pac", 4, 5, 4]]);
   // Before 2026 the Pac-12 is a power conference.
   assert.deepEqual(rows(2025), [["Mid", 1, 2, 1], ["Low", 2, 3, 2], ["UConn", 3, 4, 3]]);
+});
+
+test("rankView matches rankTeams when unfiltered", () => {
+  const view = rankView(teams, 50, 2026, false);
+  assert.deepEqual(view.map((r) => [r.id, r.rank, r.fbsRank]), rankTeams(teams, 50).map((r) => [r.id, r.rank, r.rank]));
+});
+
+test("blendLabel uses the slider's words", () => {
+  assert.equal(blendLabel(0), "100% most deserving");
+  assert.equal(blendLabel(100), "100% best team");
+  assert.equal(blendLabel(60), "40% most deserving · 60% best team");
 });

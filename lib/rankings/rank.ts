@@ -97,3 +97,15 @@ export function rankG6(teams: readonly TeamInput[], blend: number, season: numbe
   const fbs = new Map(rankTeams(teams, blend).map((t) => [t.id, t.rank]));
   return rankTeams(teams.filter((t) => isG6(t.conference, t.name, season)), blend).map((t) => ({ ...t, fbsRank: fbs.get(t.id)! }));
 }
+
+/** The ranking the page shows: all FBS teams, or the G6 teams ranked among themselves. */
+export function rankView(teams: readonly TeamInput[], blend: number, season: number, g6: boolean): FilteredTeam[] {
+  return g6 ? rankG6(teams, blend, season) : rankTeams(teams, blend).map((t) => ({ ...t, fbsRank: t.rank }));
+}
+
+/** "60% best team · 40% most deserving", in the slider's words. */
+export function blendLabel(b: number): string {
+  if (b === 0) return "100% most deserving";
+  if (b === 100) return "100% best team";
+  return `${100 - b}% most deserving · ${b}% best team`;
+}
